@@ -1,0 +1,132 @@
+import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../prisma/prisma.service';
+import { Role } from '@prisma/client';
+import { CreateMemberDto } from './dto/create-member.dto';
+import { InviteMemberDto } from './dto/invite-member.dto';
+import { UpdateMemberDto } from './dto/update-member.dto';
+import { CompleteProfileDto } from './dto/complete-profile.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+export declare class MembersService {
+    private readonly prisma;
+    private readonly notifications;
+    private readonly jwtService;
+    constructor(prisma: PrismaService, notifications: NotificationsService, jwtService: JwtService);
+    createInvite(dto: InviteMemberDto, performedById: string): Promise<{
+        activationLink: string;
+        whatsappSent: boolean | undefined;
+        whatsappError: string | undefined;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        phone: string;
+        firstName: string;
+        lastName: string;
+        role: import("@prisma/client").$Enums.Role;
+        profilePhotoUrl: string | null;
+        email: string | null;
+        neighborhood: string | null;
+        secondaryContact: string | null;
+        profileCompleted: boolean;
+        isSuspended: boolean;
+        reactivatedAt: Date | null;
+    }>;
+    create(dto: CreateMemberDto): Promise<{
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        phone: string;
+        firstName: string;
+        lastName: string;
+        role: import("@prisma/client").$Enums.Role;
+        profilePhotoUrl: string | null;
+        email: string | null;
+        neighborhood: string | null;
+        secondaryContact: string | null;
+        profileCompleted: boolean;
+        isSuspended: boolean;
+        reactivatedAt: Date | null;
+    }>;
+    findAll(): Promise<{
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        phone: string;
+        firstName: string;
+        lastName: string;
+        role: import("@prisma/client").$Enums.Role;
+        profilePhotoUrl: string | null;
+        email: string | null;
+        neighborhood: string | null;
+        secondaryContact: string | null;
+        profileCompleted: boolean;
+        isSuspended: boolean;
+        reactivatedAt: Date | null;
+    }[]>;
+    findOne(id: string): Promise<{
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        phone: string;
+        firstName: string;
+        lastName: string;
+        role: import("@prisma/client").$Enums.Role;
+        profilePhotoUrl: string | null;
+        email: string | null;
+        neighborhood: string | null;
+        secondaryContact: string | null;
+        profileCompleted: boolean;
+        isSuspended: boolean;
+        reactivatedAt: Date | null;
+    }>;
+    update(id: string, dto: UpdateMemberDto, currentUserId: string, currentUserRole: Role): Promise<{
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        phone: string;
+        firstName: string;
+        lastName: string;
+        role: import("@prisma/client").$Enums.Role;
+        profilePhotoUrl: string | null;
+        email: string | null;
+        neighborhood: string | null;
+        secondaryContact: string | null;
+        profileCompleted: boolean;
+        isSuspended: boolean;
+        reactivatedAt: Date | null;
+    }>;
+    completeProfile(userId: string, dto: CompleteProfileDto): Promise<{
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        phone: string;
+        firstName: string;
+        lastName: string;
+        role: import("@prisma/client").$Enums.Role;
+        profilePhotoUrl: string | null;
+        email: string | null;
+        neighborhood: string | null;
+        secondaryContact: string | null;
+        profileCompleted: boolean;
+        isSuspended: boolean;
+        reactivatedAt: Date | null;
+    }>;
+    logAudit(memberId: string, action: string, performedById: string | null, details?: string): Promise<void>;
+    getAuditLog(memberId: string): Promise<({
+        performedBy: {
+            id: string;
+            firstName: string;
+            lastName: string;
+        } | null;
+    } & {
+        id: string;
+        createdAt: Date;
+        memberId: string;
+        action: string;
+        details: string | null;
+        performedById: string | null;
+    })[]>;
+    remove(id: string): Promise<{
+        success: boolean;
+    }>;
+    private selectPublic;
+}

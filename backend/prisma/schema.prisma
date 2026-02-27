@@ -1,0 +1,354 @@
+// AFC – Schéma de données (Amicale Football)
+// Prisma : https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ========== Enums ==========
+
+enum Role {
+  ADMIN           // Gestion des comptes (création, édition, suppression) — distinct du Président
+  PRESIDENT
+  SECRETARY_GENERAL
+  TREASURER
+  COMMISSIONER
+  GENERAL_MEANS_MANAGER
+  PLAYER
+  FORMER_PLAYER
+  SUPPORTER
+}
+
+enum ContributionType {
+  MONTHLY      // Cotisation mensuelle obligatoire
+  EXCEPTIONAL  // Équipements, événements, tournois (date début/fin)
+  PROJECT      // Dons, actions sociales (objectif + suivi)
+}
+
+enum PaymentFrequency {
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  ANNUAL
+}
+
+enum ExpenseStatus {
+  PENDING_TREASURER   // En attente du trésorier
+  PENDING_COMMISSIONER // Validé trésorier, en attente commissaire
+  APPROVED            // Validé par les deux
+  REJECTED
+}
+
+enum ActivityType {
+  MATCH
+  TRAINING
+  BIRTHDAY
+  ANNOUNCEMENT
+  OTHER
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  SMS
+}
+
+/// Type de mouvement entre caisses : allocation (dépôt vers sous-caisse) ou retrait (sortie depuis sous-caisse)
+enum CashBoxTransferType {
+  ALLOCATION  // Dépôt vers une sous-caisse (argent alloué au secteur)
+  WITHDRAWAL  // Retrait depuis une sous-caisse (vers caisse par défaut ou sortie)
+}
+
+// ========== Module 1 : Membres ==========
+
+model Member {
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Authentification (téléphone = identité unique)
+  phone             String   @unique
+  passwordHash      String?
+  otpCode           String?
+  otpExpiresAt      DateTime?
+
+  // Profil obligatoire
+  firstName         String
+  lastName          String
+  role              Role
+  profilePhotoUrl   String?
+
+  // Optionnels
+  email             String?
+  neighborhood      String?
+  secondaryContact  String?
+
+  // Règles métier
+  profileCompleted  Boolean  @default(false) // Blocage tant que pas complété
+  isSuspended       Boolean  @default(false) // Auto à minuit si cotisation non à jour
+  reactivatedAt     DateTime? // Si réactivation manuelle par admin : date limite 24h pour payer, sinon re-suspension
+  lastSeenActivitiesAt DateTime? // Dernière visite page Activités (pour badge « non vues »)
+
+  // Relations
+  paymentsAsPayer   Payment[]
+  expensesRequested Expense[]  @relation("ExpenseRequester")
+  expensesTreasurer Expense[]  @relation("ExpenseTreasurer")
+  expensesCommissioner Expense[] @relation("ExpenseCommissioner")
+  announcements     Announcement[]
+  notificationsSent NotificationLog[]
+  inAppNotifications InAppNotification[]
+  activityPhotos    Photo[]
+  auditLogs         MemberAuditLog[]  @relation("AuditTarget")
+  auditLogsPerformed MemberAuditLog[] @relation("AuditPerformer")
+  transfersRequested    CashBoxTransfer[] @relation("TransferRequester")
+  transfersTreasurer    CashBoxTransfer[] @relation("TransferTreasurer")
+  transfersCommissioner CashBoxTransfer[] @relation("TransferCommissioner")
+  cinetPayTransactions  CinetPayTransaction[]
+}
+
+/// Historique des actions sur un membre (invitation, mise à jour, suspension, etc.)
+model MemberAuditLog {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+
+  memberId      String
+  member        Member   @relation("AuditTarget", fields: [memberId], references: [id], onDelete: Cascade)
+  action        String   // INVITED, PROFILE_COMPLETED, UPDATED, SUSPENDED, REACTIVATED
+  performedById String?
+  performedBy   Member?  @relation("AuditPerformer", fields: [performedById], references: [id], onDelete: SetNull)
+  details       String?  @db.Text // JSON ou texte libre
+
+  @@index([memberId])
+}
+
+// ========== Module 2 : Cotisations ==========
+
+/// Définition d'une cotisation (mensuelle, exceptionnelle ou projet)
+model Contribution {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  name         String   // ex. "Cotisation mensuelle", "Équipement 2025", "Don orphelinat"
+  type         ContributionType
+
+  // Mensuelle : montant par mois, échéance 10
+  amount       Decimal? @db.Decimal(12, 2) // Montant (mensuel ou unitaire)
+
+  // Exceptionnelle : date début / fin, chacun peut payer plusieurs fois
+  startDate    DateTime?
+  endDate      DateTime?
+
+  // Projet : objectif et suivi
+  targetAmount Decimal? @db.Decimal(12, 2)
+  receivedAmount Decimal? @db.Decimal(12, 2) @default(0) // Mis à jour à chaque paiement
+
+  // Fréquence affichée (mensuel / trim. / sem. / annuel) — suivi reste mensuel en backend
+  frequency    PaymentFrequency? @default(MONTHLY)
+
+  payments     Payment[]
+}
+
+/// Paiement effectué par un membre (cotisation mensuelle, exceptionnelle ou projet)
+model Payment {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+
+  memberId       String
+  member         Member       @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  contributionId String
+  contribution   Contribution @relation(fields: [contributionId], references: [id], onDelete: Restrict)
+
+  amount         Decimal  @db.Decimal(12, 2)
+  paidAt         DateTime @default(now())
+
+  // Sous-caisse créditée (null = caisse par défaut)
+  cashBoxId      String?
+  cashBox        CashBox? @relation(fields: [cashBoxId], references: [id], onDelete: SetNull)
+
+  // Pour cotisation mensuelle : période concernée (année + mois)
+  periodYear     Int?
+  periodMonth    Int?     // 1-12
+
+  metadata       String?  // JSON optionnel (projet, libellé, etc.)
+
+  @@index([memberId, contributionId, periodYear, periodMonth])
+  @@index([contributionId, paidAt])
+  @@index([cashBoxId])
+}
+
+/// Transaction CinetPay en attente ou complétée (paiement cotisation via CinetPay)
+model CinetPayTransaction {
+  id              String   @id @default(cuid())
+  transactionId  String   @unique @map("transaction_id")
+  memberId       String   @map("member_id")
+  member         Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  contributionId String   @map("contribution_id")
+  amount         Decimal  @db.Decimal(12, 2)
+  currency       String   @default("XOF")
+  status         String   @default("PENDING") // PENDING, COMPLETED, FAILED, REFUSED
+  periodYear     Int?     @map("period_year")
+  periodMonth    Int?     @map("period_month")
+  cashBoxId      String?  @map("cash_box_id")
+  cinetpayId     String?  @map("cinetpay_id")
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([transactionId])
+  @@index([memberId])
+  @@map("cinetpay_transactions")
+}
+
+// ========== Module 4 : Caisse (sous-caisses type Wave, dépenses, double validation) ==========
+
+/// Sous-caisse (compte caisse) : chaque entrée/sortie est rattachée à une sous-caisse.
+model CashBox {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  name        String   // ex. "Caisse principale", "Événements", "Équipe"
+  description String?  @db.Text
+  order       Int      @default(0)   // Ordre d'affichage
+  isDefault   Boolean  @default(false) // Une seule à true : caisse par défaut pour les entrées
+
+  expenses      Expense[]
+  payments      Payment[]
+  transfersFrom CashBoxTransfer[] @relation("TransferFrom")
+  transfersTo   CashBoxTransfer[] @relation("TransferTo")
+
+  @@index([order])
+}
+
+/// Mouvement entre caisses : allocation (dépôt vers sous-caisse) ou retrait (sortie). Validation Trésorier + Commissaire.
+model CashBoxTransfer {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  type        CashBoxTransferType
+  amount      Decimal  @db.Decimal(12, 2)
+  description String?  @db.Text
+
+  /// Caisse source (null = caisse par défaut)
+  fromCashBoxId String?
+  fromCashBox   CashBox? @relation("TransferFrom", fields: [fromCashBoxId], references: [id], onDelete: SetNull)
+  /// Caisse cible (null = caisse par défaut)
+  toCashBoxId   String?
+  toCashBox     CashBox? @relation("TransferTo", fields: [toCashBoxId], references: [id], onDelete: SetNull)
+
+  status      ExpenseStatus @default(PENDING_TREASURER)
+
+  requestedById        String
+  requestedBy          Member   @relation("TransferRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  treasurerApprovedById String?
+  treasurerApprovedBy   Member?  @relation("TransferTreasurer", fields: [treasurerApprovedById], references: [id], onDelete: SetNull)
+  treasurerApprovedAt   DateTime?
+  commissionerApprovedById String?
+  commissionerApprovedBy   Member? @relation("TransferCommissioner", fields: [commissionerApprovedById], references: [id], onDelete: SetNull)
+  commissionerApprovedAt   DateTime?
+  rejectReason          String?  @db.Text
+
+  @@index([fromCashBoxId])
+  @@index([toCashBoxId])
+  @@index([status])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  amount      Decimal  @db.Decimal(12, 2)
+  description String
+  expenseDate DateTime // Date de la dépense
+  beneficiary String?  // Décaissement pour qui/quoi (personne, activité, collecte) — transparence
+
+  status      ExpenseStatus @default(PENDING_TREASURER)
+
+  cashBoxId   String?   // null = caisse par défaut (rétrocompat)
+  cashBox     CashBox?  @relation(fields: [cashBoxId], references: [id], onDelete: SetNull)
+
+  requestedById        String
+  requestedBy          Member   @relation("ExpenseRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  treasurerApprovedById String?
+  treasurerApprovedBy  Member?  @relation("ExpenseTreasurer", fields: [treasurerApprovedById], references: [id], onDelete: SetNull)
+  treasurerApprovedAt  DateTime?
+  commissionerApprovedById String?
+  commissionerApprovedBy   Member? @relation("ExpenseCommissioner", fields: [commissionerApprovedById], references: [id], onDelete: SetNull)
+  commissionerApprovedAt  DateTime?
+  rejectReason             String?  @db.Text // Motif du rejet (trésorier ou commissaire)
+
+  @@index([cashBoxId])
+}
+
+
+// ========== Module 5 : Activités & vie du club ==========
+
+model Activity {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  type        ActivityType
+  title       String
+  description String?
+  date        DateTime
+  endDate     DateTime?
+  result      String?  // Pour les matchs : score, résultat
+  photos      Photo[]
+}
+
+model Photo {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+
+  url        String
+  caption    String?
+  activityId String?
+  activity   Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  uploadedById String
+  uploadedBy   Member @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  title   String
+  content String   @db.Text
+  authorId String
+  author   Member  @relation(fields: [authorId], references: [id], onDelete: Restrict)
+}
+
+// ========== Module 6 : Notifications (historique envoyé) ==========
+
+model NotificationLog {
+  id        String   @id @default(cuid())
+  sentAt    DateTime @default(now())
+
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  channel   NotificationChannel
+  type      String   // RAPPEL_COTISATION, CONFIRMATION_PAIEMENT, ANNONCE, etc.
+  payload   String?  @db.Text // JSON optionnel
+}
+
+/// Notifications in-app : message du bureau aux membres (ex. rappel personnalisé, info)
+model InAppNotification {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  title     String?  // ex. "Rappel cotisation"
+  message   String   @db.Text
+  read      Boolean  @default(false)
+
+  @@index([memberId])
+  @@index([memberId, read])
+}
