@@ -50,7 +50,7 @@ export class MembersService {
       { sub: member.id, purpose: 'activation' } as { sub: string; purpose: 'activation' },
       { expiresIn: '24h' } as any,
     );
-    const activationLink = `${FRONTEND_URL}/activate?token=${encodeURIComponent(activationToken)}`;
+    const activationLink = `${FRONTEND_URL}/activate?phone=${encodeURIComponent(member.phone)}&token=${encodeURIComponent(activationToken)}`;
     const inviteResult = await this.notifications.sendActivationInvite(
       member.id,
       member.phone,
