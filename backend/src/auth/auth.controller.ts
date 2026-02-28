@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -32,6 +32,12 @@ export class AuthController {
   @Post('verify-activation-otp')
   async verifyActivationOtp(@Body() dto: VerifyActivationOtpDto) {
     return this.authService.verifyActivationOtp(dto.phone, dto.code);
+  }
+
+  @Public()
+  @Get('activation-info')
+  async getActivationInfo(@Query('token') token: string) {
+    return this.authService.getActivationPhone(token || '');
   }
 
   @Public()

@@ -145,6 +145,27 @@ export class AuthService {
     return this.jwtService.sign(payload, { expiresIn } as any);
   }
 
+  /** Retourne le téléphone associé au token d'activation (pour les anciens liens sans ?phone=). */
+  async getActivationPhone(activationToken: string): Promise<{ phone: string }> {
+    let payload: ActivationPayload;
+    try {
+      payload = this.jwtService.verify<ActivationPayload>(activationToken);
+    } catch {
+      throw new BadRequestException('Lien expiré. Utilisez à nouveau le lien d\'activation.');
+    }
+    if (payload.purpose !== 'activation') {
+      throw new BadRequestException('Jeton invalide.');
+    }
+    const member = await this.prisma.member.findUnique({
+      where: { id: payload.sub },
+      select: { phone: true },
+    });
+    if (!member) {
+      throw new BadRequestException('Membre introuvable.');
+    }
+    return { phone: member.phone };
+  }
+
   async setPassword(activationToken: string, password: string) {
     let payload: ActivationPayload;
     try {
