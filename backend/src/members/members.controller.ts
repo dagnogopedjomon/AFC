@@ -14,8 +14,9 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import multer from 'multer';
 import { join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { MembersService } from './members.service';
+import { SupabaseService } from '../supabase/supabase.service';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
@@ -30,16 +31,7 @@ import { Role } from '@prisma/client';
 import type { RequestUser } from '../auth/jwt.strategy';
 
 const avatarsDir = join(process.cwd(), 'uploads', 'avatars');
-const avatarStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    if (!existsSync(avatarsDir)) mkdirSync(avatarsDir, { recursive: true });
-    cb(null, avatarsDir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z]/g, '') || 'jpg';
-    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 11)}.${ext}`);
-  },
-});
+const avatarStorage = multer.memoryStorage();
 
 const BUREAU_ROLES: Role[] = [
   Role.PRESIDENT,
@@ -52,7 +44,10 @@ const BUREAU_ROLES: Role[] = [
 @Controller('members')
 @UseGuards(JwtAuthGuard)
 export class MembersController {
-  constructor(private readonly membersService: MembersService) {}
+  constructor(
+    private readonly membersService: MembersService,
+    private readonly supabase: SupabaseService,
+  ) {}
 
   /** Inviter un membre : téléphone + rôle. Pas de mot de passe ; invitation WhatsApp envoyée. */
   @Post('invite')
@@ -103,12 +98,29 @@ export class MembersController {
       },
     }),
   )
-  uploadAvatar(
+  async uploadAvatar(
     @CurrentUser() user: RequestUser,
     @UploadedFile() file: Express.Multer.File | undefined,
   ) {
     if (!file) throw new BadRequestException('Aucun fichier envoyé');
-    return { url: `/uploads/avatars/${file.filename}` };
+    const buffer = file.buffer;
+    if (!buffer) throw new BadRequestException('Fichier invalide');
+
+    if (this.supabase.isConfigured()) {
+      const publicUrl = await this.supabase.uploadAvatar(
+        buffer,
+        file.mimetype,
+        user.id,
+      );
+      return { url: publicUrl };
+    }
+
+    if (!existsSync(avatarsDir)) mkdirSync(avatarsDir, { recursive: true });
+    const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z]/g, '') || 'jpg';
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}.${ext}`;
+    const filepath = join(avatarsDir, filename);
+    writeFileSync(filepath, buffer);
+    return { url: `/uploads/avatars/${filename}` };
   }
 
   @Get(':id/audit-log')

@@ -28,9 +28,13 @@ async function bootstrap() {
         bufferLogs: true,
     });
     app.useGlobalPipes(new common_1.ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
-    const frontendOrigin = process.env.FRONTEND_URL?.trim() || '';
-    if (isProd && frontendOrigin) {
-        app.enableCors({ origin: [frontendOrigin.replace(/\/$/, '')], credentials: true });
+    const frontendUrlRaw = process.env.FRONTEND_URL?.trim() || '';
+    const allowedOrigins = frontendUrlRaw
+        .split(',')
+        .map((u) => u.trim().replace(/\/$/, ''))
+        .filter(Boolean);
+    if (isProd && allowedOrigins.length > 0) {
+        app.enableCors({ origin: allowedOrigins, credentials: true });
     }
     else {
         app.enableCors({ origin: true });

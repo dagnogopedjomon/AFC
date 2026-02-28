@@ -13,6 +13,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { HealthModule } from './health/health.module';
+import { SupabaseModule } from './supabase/supabase.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -31,6 +32,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     ActivitiesModule,
     NotificationsModule,
     HealthModule,
+    SupabaseModule,
   ],
   controllers: [AppController],
   providers: [

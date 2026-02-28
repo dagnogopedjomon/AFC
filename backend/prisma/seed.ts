@@ -1,11 +1,19 @@
 import 'dotenv/config';
 import { PrismaClient, Role, ContributionType, PaymentFrequency } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
+
+// Accepter le certificat Supabase en local (évite "self-signed certificate in certificate chain")
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is not set');
-const adapter = new PrismaPg({ connectionString });
+const pool = new Pool({
+  connectionString,
+  ssl: { rejectUnauthorized: false },
+});
+const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
@@ -64,8 +72,8 @@ async function main() {
 
 main()
   .then(() => prisma.$disconnect())
+  .then(() => pool.end())
   .catch((e) => {
     console.error(e);
-    prisma.$disconnect();
-    process.exit(1);
+    prisma.$disconnect().then(() => pool.end()).then(() => process.exit(1));
   });
