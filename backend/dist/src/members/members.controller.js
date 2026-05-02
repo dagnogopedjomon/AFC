@@ -22,6 +22,7 @@ const multer_1 = __importDefault(require("multer"));
 const path_1 = require("path");
 const fs_1 = require("fs");
 const members_service_1 = require("./members.service");
+const supabase_service_1 = require("../supabase/supabase.service");
 const create_member_dto_1 = require("./dto/create-member.dto");
 const invite_member_dto_1 = require("./dto/invite-member.dto");
 const update_member_dto_1 = require("./dto/update-member.dto");
@@ -34,17 +35,7 @@ const current_user_decorator_1 = require("../auth/current-user.decorator");
 const skip_profile_check_decorator_1 = require("../auth/skip-profile-check.decorator");
 const client_1 = require("@prisma/client");
 const avatarsDir = (0, path_1.join)(process.cwd(), 'uploads', 'avatars');
-const avatarStorage = multer_1.default.diskStorage({
-    destination: (_req, _file, cb) => {
-        if (!(0, fs_1.existsSync)(avatarsDir))
-            (0, fs_1.mkdirSync)(avatarsDir, { recursive: true });
-        cb(null, avatarsDir);
-    },
-    filename: (_req, file, cb) => {
-        const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z]/g, '') || 'jpg';
-        cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 11)}.${ext}`);
-    },
-});
+const avatarStorage = multer_1.default.memoryStorage();
 const BUREAU_ROLES = [
     client_1.Role.PRESIDENT,
     client_1.Role.SECRETARY_GENERAL,
@@ -54,8 +45,10 @@ const BUREAU_ROLES = [
 ];
 let MembersController = class MembersController {
     membersService;
-    constructor(membersService) {
+    supabase;
+    constructor(membersService, supabase) {
         this.membersService = membersService;
+        this.supabase = supabase;
     }
     invite(dto, user) {
         return this.membersService.createInvite(dto, user.id);
@@ -72,10 +65,23 @@ let MembersController = class MembersController {
     completeProfile(user, dto) {
         return this.membersService.completeProfile(user.id, dto);
     }
-    uploadAvatar(user, file) {
+    async uploadAvatar(user, file) {
         if (!file)
             throw new common_1.BadRequestException('Aucun fichier envoyé');
-        return { url: `/uploads/avatars/${file.filename}` };
+        const buffer = file.buffer;
+        if (!buffer)
+            throw new common_1.BadRequestException('Fichier invalide');
+        if (this.supabase.isConfigured()) {
+            const publicUrl = await this.supabase.uploadAvatar(buffer, file.mimetype, user.id);
+            return { url: publicUrl };
+        }
+        if (!(0, fs_1.existsSync)(avatarsDir))
+            (0, fs_1.mkdirSync)(avatarsDir, { recursive: true });
+        const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z]/g, '') || 'jpg';
+        const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}.${ext}`;
+        const filepath = (0, path_1.join)(avatarsDir, filename);
+        (0, fs_1.writeFileSync)(filepath, buffer);
+        return { url: `/uploads/avatars/${filename}` };
     }
     getAuditLog(id) {
         return this.membersService.getAuditLog(id);
@@ -152,7 +158,7 @@ __decorate([
     __param(1, (0, common_1.UploadedFile)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, Object]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], MembersController.prototype, "uploadAvatar", null);
 __decorate([
     (0, common_1.Get)(':id/audit-log'),
@@ -195,6 +201,7 @@ __decorate([
 exports.MembersController = MembersController = __decorate([
     (0, common_1.Controller)('members'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
-    __metadata("design:paramtypes", [members_service_1.MembersService])
+    __metadata("design:paramtypes", [members_service_1.MembersService,
+        supabase_service_1.SupabaseService])
 ], MembersController);
 //# sourceMappingURL=members.controller.js.map

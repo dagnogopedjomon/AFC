@@ -1,4 +1,5 @@
 import { MembersService } from './members.service';
+import { SupabaseService } from '../supabase/supabase.service';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
@@ -6,7 +7,8 @@ import { CompleteProfileDto } from './dto/complete-profile.dto';
 import type { RequestUser } from '../auth/jwt.strategy';
 export declare class MembersController {
     private readonly membersService;
-    constructor(membersService: MembersService);
+    private readonly supabase;
+    constructor(membersService: MembersService, supabase: SupabaseService);
     invite(dto: InviteMemberDto, user: RequestUser): Promise<{
         activationLink: string;
         whatsappSent: boolean | undefined;
@@ -90,9 +92,9 @@ export declare class MembersController {
         isSuspended: boolean;
         reactivatedAt: Date | null;
     }>;
-    uploadAvatar(user: RequestUser, file: Express.Multer.File | undefined): {
+    uploadAvatar(user: RequestUser, file: Express.Multer.File | undefined): Promise<{
         url: string;
-    };
+    }>;
     getAuditLog(id: string): Promise<({
         performedBy: {
             id: string;

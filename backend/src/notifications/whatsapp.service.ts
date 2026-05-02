@@ -1,131 +1,68 @@
 import { Injectable } from '@nestjs/common';
+import { sayelesendSend, normalizeE164 } from './sayelesend.util';
 
-const GRAPH_API_VERSION = 'v18.0';
-const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
-
+/**
+ * Envoi WhatsApp via Sayelesend (channel "whatsapp").
+ *
+ * Variables d'environnement :
+ *   - SAYELESEND_API_KEY : clé API (Bearer token)
+ *   - SAYELESEND_WHATSAPP_FROM (optionnel) : Sender ID WhatsApp
+ *   - COUNTRY_CODE : indicatif par défaut (225, 33, ...)
+ */
 @Injectable()
 export class WhatsappService {
-  private readonly accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-  private readonly phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  private readonly apiKey = process.env.SAYELESEND_API_KEY;
+  private readonly from = process.env.SAYELESEND_WHATSAPP_FROM;
 
   /** Vérifie si l'envoi WhatsApp est configuré. */
   isConfigured(): boolean {
-    return Boolean(this.accessToken && this.phoneNumberId);
+    return Boolean(this.apiKey);
   }
 
-  /**
-   * Normalise le numéro pour l'API WhatsApp : chiffres uniquement, avec indicatif pays.
-   * Pour Côte d'Ivoire (225) : 07 59 92 80 05 → 22575928005 (on enlève le 0 initial).
-   * Pour France (33) : 06 12 34 56 78 → 33612345678.
-   */
+  /** Compat legacy : normalise au format E.164 (ex: +2250759928005). */
   normalizePhone(phone: string): string {
-    const digits = phone.replace(/\D/g, '');
-    const countryCode = process.env.COUNTRY_CODE || '33';
-    if (digits.startsWith('0') && digits.length === 10) {
-      return countryCode + digits.slice(1);
-    }
-    if (digits.startsWith('33') && digits.length === 11) return digits;
-    if (digits.startsWith('225') && digits.length >= 11) return digits;
-    return digits;
+    return normalizeE164(phone);
   }
 
   /**
-   * Envoie un message texte via l'API WhatsApp Cloud.
-   * @returns messageId (WAMID), ou { error } en cas d'échec, ou null si non configuré
+   * Envoie un message texte WhatsApp via Sayelesend.
+   * @returns { messageId } en succès, { error } en échec, null si non configuré.
    */
-  async sendText(toPhone: string, body: string): Promise<{ messageId: string } | { error: string } | null> {
-    if (!this.isConfigured()) {
-      return null;
-    }
-    const to = this.normalizePhone(toPhone);
-    console.log('[WhatsApp] Envoi vers:', to, '(COUNTRY_CODE=' + (process.env.COUNTRY_CODE || '33') + ')');
-    const url = `${GRAPH_BASE}/${this.phoneNumberId}/messages`;
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
+  async sendText(
+    toPhone: string,
+    body: string,
+  ): Promise<{ messageId: string } | { error: string } | null> {
+    if (!this.isConfigured()) return null;
+    const to = normalizeE164(toPhone);
+    const result = await sayelesendSend({
+      apiKey: this.apiKey!,
       to,
-      type: 'text',
-      text: {
-        body,
-        preview_url: false,
-      },
-    };
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.accessToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = (await res.json()) as { messages?: Array<{ id: string }>; error?: { message: string; code?: number } };
-      if (!res.ok) {
-        const errMsg = data?.error?.message ?? res.statusText;
-        console.error('[WhatsApp] API error:', errMsg, data?.error);
-        return { error: errMsg };
-      }
-      const messageId = data?.messages?.[0]?.id ?? null;
-      return messageId ? { messageId } : null;
-    } catch (err) {
-      console.error('[WhatsApp] send failed:', err);
-      return { error: err instanceof Error ? err.message : 'Erreur réseau' };
-    }
+      message: body,
+      channel: 'whatsapp',
+      from: this.from,
+      logPrefix: '[WhatsApp/Sayelesend]',
+    });
+    return result;
   }
 
   /**
-   * Envoie un message template (obligatoire pour le premier contact avec un utilisateur).
-   * Ex. hello_world (sans paramètre) ou invitation_activation avec {{1}} = lien.
+   * Compat avec le code existant (anciennement Meta Cloud API).
+   * Sayelesend ne gère pas les templates Meta : on tombe en fallback sur sendText.
+   * - Si bodyParams est fourni, on substitue {{1}}, {{2}}, ... dans un template local minimal.
+   * - Sinon on envoie le nom du template comme texte brut.
+   *
+   * NOTE : pour les invitations d'activation, préférer utiliser directement sendText(activationLink).
    */
   async sendTemplate(
     toPhone: string,
     templateName: string,
-    languageCode: string,
+    _languageCode: string,
     bodyParams?: string[],
   ): Promise<{ messageId: string } | { error: string } | null> {
     if (!this.isConfigured()) return null;
-    const to = this.normalizePhone(toPhone);
-    console.log('[WhatsApp] Template vers:', to, 'template:', templateName);
-    const url = `${GRAPH_BASE}/${this.phoneNumberId}/messages`;
-    const template: Record<string, unknown> = {
-      name: templateName,
-      language: { code: languageCode },
-    };
-    if (bodyParams && bodyParams.length > 0) {
-      template.components = [
-        {
-          type: 'body',
-          parameters: bodyParams.map((text) => ({ type: 'text' as const, text })),
-        },
-      ];
-    }
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'template',
-      template,
-    };
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.accessToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = (await res.json()) as { messages?: Array<{ id: string }>; error?: { message: string } };
-      if (!res.ok) {
-        const errMsg = data?.error?.message ?? res.statusText;
-        console.error('[WhatsApp] Template API error:', errMsg, data?.error);
-        return { error: errMsg };
-      }
-      const messageId = data?.messages?.[0]?.id ?? null;
-      return messageId ? { messageId } : null;
-    } catch (err) {
-      console.error('[WhatsApp] send template failed:', err);
-      return { error: err instanceof Error ? err.message : 'Erreur réseau' };
-    }
+    const body = bodyParams && bodyParams.length > 0
+      ? bodyParams.join(' ')
+      : templateName;
+    return this.sendText(toPhone, body);
   }
 }

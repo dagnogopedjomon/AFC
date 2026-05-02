@@ -13,20 +13,54 @@ exports.PrismaService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const adapter_pg_1 = require("@prisma/adapter-pg");
+const pg_1 = require("pg");
+function connectionStringWithoutSslQueryParams(connectionString) {
+    const q = connectionString.indexOf('?');
+    if (q === -1)
+        return connectionString;
+    const base = connectionString.slice(0, q);
+    const params = new URLSearchParams(connectionString.slice(q + 1));
+    params.delete('sslmode');
+    params.delete('uselibpqcompat');
+    const rest = params.toString();
+    return rest ? `${base}?${rest}` : base;
+}
 let PrismaService = class PrismaService extends client_1.PrismaClient {
+    pgPool;
     constructor() {
         const connectionString = process.env.DATABASE_URL;
         if (!connectionString) {
             throw new Error('DATABASE_URL is not defined');
         }
-        const adapter = new adapter_pg_1.PrismaPg({ connectionString });
+        const strictSsl = process.env.DATABASE_SSL_STRICT === 'true';
+        const trimmed = connectionString.trim();
+        const isSupabase = /supabase\.co/i.test(trimmed) || /\.pooler\.supabase\.com/i.test(trimmed);
+        const useRelaxedPool = !strictSsl &&
+            (isSupabase || process.env.DATABASE_SSL_INSECURE === 'true');
+        let adapter;
+        let pool = null;
+        if (useRelaxedPool) {
+            const cs = connectionStringWithoutSslQueryParams(trimmed);
+            pool = new pg_1.Pool({
+                connectionString: cs,
+                ssl: { rejectUnauthorized: false },
+            });
+            adapter = new adapter_pg_1.PrismaPg(pool);
+        }
+        else {
+            adapter = new adapter_pg_1.PrismaPg({ connectionString: trimmed });
+        }
         super({ adapter });
+        this.pgPool = pool;
     }
     async onModuleInit() {
         await this.$connect();
     }
     async onModuleDestroy() {
         await this.$disconnect();
+        if (this.pgPool) {
+            await this.pgPool.end();
+        }
     }
 };
 exports.PrismaService = PrismaService;

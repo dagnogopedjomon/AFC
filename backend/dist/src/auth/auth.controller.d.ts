@@ -20,6 +20,9 @@ export declare class AuthController {
     verifyActivationOtp(dto: VerifyActivationOtpDto): Promise<{
         activationToken: string;
     }>;
+    getActivationInfo(token: string): Promise<{
+        phone: string;
+    }>;
     setPassword(dto: SetPasswordDto): Promise<{
         ok: boolean;
         message: string;

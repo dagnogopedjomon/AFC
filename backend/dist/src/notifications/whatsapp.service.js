@@ -8,113 +8,37 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WhatsappService = void 0;
 const common_1 = require("@nestjs/common");
-const GRAPH_API_VERSION = 'v18.0';
-const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+const sayelesend_util_1 = require("./sayelesend.util");
 let WhatsappService = class WhatsappService {
-    accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-    phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    apiKey = process.env.SAYELESEND_API_KEY;
+    from = process.env.SAYELESEND_WHATSAPP_FROM;
     isConfigured() {
-        return Boolean(this.accessToken && this.phoneNumberId);
+        return Boolean(this.apiKey);
     }
     normalizePhone(phone) {
-        const digits = phone.replace(/\D/g, '');
-        const countryCode = process.env.COUNTRY_CODE || '33';
-        if (digits.startsWith('0') && digits.length === 10) {
-            return countryCode + digits.slice(1);
-        }
-        if (digits.startsWith('33') && digits.length === 11)
-            return digits;
-        if (digits.startsWith('225') && digits.length >= 11)
-            return digits;
-        return digits;
+        return (0, sayelesend_util_1.normalizeE164)(phone);
     }
     async sendText(toPhone, body) {
-        if (!this.isConfigured()) {
-            return null;
-        }
-        const to = this.normalizePhone(toPhone);
-        console.log('[WhatsApp] Envoi vers:', to, '(COUNTRY_CODE=' + (process.env.COUNTRY_CODE || '33') + ')');
-        const url = `${GRAPH_BASE}/${this.phoneNumberId}/messages`;
-        const payload = {
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
-            to,
-            type: 'text',
-            text: {
-                body,
-                preview_url: false,
-            },
-        };
-        try {
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${this.accessToken}`,
-                },
-                body: JSON.stringify(payload),
-            });
-            const data = (await res.json());
-            if (!res.ok) {
-                const errMsg = data?.error?.message ?? res.statusText;
-                console.error('[WhatsApp] API error:', errMsg, data?.error);
-                return { error: errMsg };
-            }
-            const messageId = data?.messages?.[0]?.id ?? null;
-            return messageId ? { messageId } : null;
-        }
-        catch (err) {
-            console.error('[WhatsApp] send failed:', err);
-            return { error: err instanceof Error ? err.message : 'Erreur réseau' };
-        }
-    }
-    async sendTemplate(toPhone, templateName, languageCode, bodyParams) {
         if (!this.isConfigured())
             return null;
-        const to = this.normalizePhone(toPhone);
-        console.log('[WhatsApp] Template vers:', to, 'template:', templateName);
-        const url = `${GRAPH_BASE}/${this.phoneNumberId}/messages`;
-        const template = {
-            name: templateName,
-            language: { code: languageCode },
-        };
-        if (bodyParams && bodyParams.length > 0) {
-            template.components = [
-                {
-                    type: 'body',
-                    parameters: bodyParams.map((text) => ({ type: 'text', text })),
-                },
-            ];
-        }
-        const payload = {
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
+        const to = (0, sayelesend_util_1.normalizeE164)(toPhone);
+        const result = await (0, sayelesend_util_1.sayelesendSend)({
+            apiKey: this.apiKey,
             to,
-            type: 'template',
-            template,
-        };
-        try {
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${this.accessToken}`,
-                },
-                body: JSON.stringify(payload),
-            });
-            const data = (await res.json());
-            if (!res.ok) {
-                const errMsg = data?.error?.message ?? res.statusText;
-                console.error('[WhatsApp] Template API error:', errMsg, data?.error);
-                return { error: errMsg };
-            }
-            const messageId = data?.messages?.[0]?.id ?? null;
-            return messageId ? { messageId } : null;
-        }
-        catch (err) {
-            console.error('[WhatsApp] send template failed:', err);
-            return { error: err instanceof Error ? err.message : 'Erreur réseau' };
-        }
+            message: body,
+            channel: 'whatsapp',
+            from: this.from,
+            logPrefix: '[WhatsApp/Sayelesend]',
+        });
+        return result;
+    }
+    async sendTemplate(toPhone, templateName, _languageCode, bodyParams) {
+        if (!this.isConfigured())
+            return null;
+        const body = bodyParams && bodyParams.length > 0
+            ? bodyParams.join(' ')
+            : templateName;
+        return this.sendText(toPhone, body);
     }
 };
 exports.WhatsappService = WhatsappService;

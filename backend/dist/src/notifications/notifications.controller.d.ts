@@ -26,8 +26,8 @@ export declare class NotificationsController {
         id: string;
         createdAt: Date;
         memberId: string;
-        title: string | null;
         message: string;
+        title: string | null;
         read: boolean;
     }[]>;
     getInAppUnreadCount(user: RequestUser): Promise<{
@@ -58,8 +58,8 @@ export declare class NotificationsController {
         id: string;
         memberId: string;
         type: string;
-        sentAt: Date;
         channel: import("@prisma/client").$Enums.NotificationChannel;
+        sentAt: Date;
         payload: string | null;
     })[]>;
 }

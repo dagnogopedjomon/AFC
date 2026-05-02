@@ -11,8 +11,8 @@ export declare class NotificationsService {
         id: string;
         memberId: string;
         type: string;
-        sentAt: Date;
         channel: import("@prisma/client").$Enums.NotificationChannel;
+        sentAt: Date;
         payload: string | null;
     }>;
     sendCotisationReminder(memberId: string, periodLabel: string): Promise<{
@@ -46,16 +46,16 @@ export declare class NotificationsService {
         id: string;
         memberId: string;
         type: string;
-        sentAt: Date;
         channel: import("@prisma/client").$Enums.NotificationChannel;
+        sentAt: Date;
         payload: string | null;
     })[]>;
     createInApp(memberId: string, message: string, title?: string): Promise<{
         id: string;
         createdAt: Date;
         memberId: string;
-        title: string | null;
         message: string;
+        title: string | null;
         read: boolean;
     }>;
     createInAppBulk(memberIds: string[], message: string, title?: string): Promise<{
@@ -65,8 +65,8 @@ export declare class NotificationsService {
         id: string;
         createdAt: Date;
         memberId: string;
-        title: string | null;
         message: string;
+        title: string | null;
         read: boolean;
     }[]>;
     getInAppUnreadCount(memberId: string): Promise<number>;

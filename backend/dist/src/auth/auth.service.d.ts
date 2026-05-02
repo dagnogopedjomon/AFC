@@ -78,6 +78,9 @@ export declare class AuthService {
         activationToken: string;
     }>;
     createActivationToken(memberId: string, expiresIn?: string): string;
+    getActivationPhone(activationToken: string): Promise<{
+        phone: string;
+    }>;
     setPassword(activationToken: string, password: string): Promise<{
         ok: boolean;
         message: string;

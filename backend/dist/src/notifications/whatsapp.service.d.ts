@@ -1,6 +1,6 @@
 export declare class WhatsappService {
-    private readonly accessToken;
-    private readonly phoneNumberId;
+    private readonly apiKey;
+    private readonly from;
     isConfigured(): boolean;
     normalizePhone(phone: string): string;
     sendText(toPhone: string, body: string): Promise<{
@@ -8,7 +8,7 @@ export declare class WhatsappService {
     } | {
         error: string;
     } | null>;
-    sendTemplate(toPhone: string, templateName: string, languageCode: string, bodyParams?: string[]): Promise<{
+    sendTemplate(toPhone: string, templateName: string, _languageCode: string, bodyParams?: string[]): Promise<{
         messageId: string;
     } | {
         error: string;

@@ -79,7 +79,7 @@ let MembersService = class MembersService {
             select: this.selectPublic(),
         });
         const activationToken = this.jwtService.sign({ sub: member.id, purpose: 'activation' }, { expiresIn: '24h' });
-        const activationLink = `${FRONTEND_URL}/activate?token=${encodeURIComponent(activationToken)}`;
+        const activationLink = `${FRONTEND_URL}/activate?phone=${encodeURIComponent(member.phone)}&token=${encodeURIComponent(activationToken)}`;
         const inviteResult = await this.notifications.sendActivationInvite(member.id, member.phone, activationLink);
         await this.logAudit(member.id, 'INVITED', performedById, undefined);
         return {

@@ -37,6 +37,9 @@ let AuthController = class AuthController {
     async verifyActivationOtp(dto) {
         return this.authService.verifyActivationOtp(dto.phone, dto.code);
     }
+    async getActivationInfo(token) {
+        return this.authService.getActivationPhone(token || '');
+    }
     async setPassword(dto) {
         return this.authService.setPassword(dto.activationToken, dto.password);
     }
@@ -70,6 +73,14 @@ __decorate([
     __metadata("design:paramtypes", [verify_activation_otp_dto_1.VerifyActivationOtpDto]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "verifyActivationOtp", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.Get)('activation-info'),
+    __param(0, (0, common_1.Query)('token')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "getActivationInfo", null);
 __decorate([
     (0, public_decorator_1.Public)(),
     (0, common_1.Post)('set-password'),

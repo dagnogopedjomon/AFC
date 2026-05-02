@@ -85,35 +85,52 @@ export class NotificationsService {
     whatsappError?: string;
   }> {
     const text = `Vous avez été ajouté à l'amicale AFC. Cliquez pour activer : ${activationLink} — Amicale AFC`;
-    const channel = this.sms.isConfigured() ? NotificationChannel.SMS : NotificationChannel.WHATSAPP;
-    if (this.sms.isConfigured()) {
-      await this.sms.send(phone, text);
-      return { ok: true };
-    }
+
+    // Priorité WhatsApp, fallback SMS en cas d'échec.
     if (this.whatsapp.isConfigured()) {
-      const templateName = process.env.WHATSAPP_INVITATION_TEMPLATE_NAME;
-      const templateLang = process.env.WHATSAPP_INVITATION_TEMPLATE_LANGUAGE || 'en_US';
-      let result: { messageId?: string; error?: string } | null;
-      if (templateName) {
-        const hasLink = process.env.WHATSAPP_INVITATION_TEMPLATE_HAS_LINK === 'true';
-        const bodyParams = hasLink ? [activationLink] : [];
-        result = await this.whatsapp.sendTemplate(phone, templateName, templateLang, bodyParams);
-      } else {
-        result = await this.whatsapp.sendText(phone, text);
-      }
-      const whatsappSent =
-        result != null && 'messageId' in result && !!result.messageId;
-      const whatsappError =
-        result != null && 'error' in result ? result.error : undefined;
-      await this.log(memberId, channel, 'INVITATION_ACTIVATION', {
+      const result = await this.whatsapp.sendText(phone, text);
+      const whatsappSent = result != null && 'messageId' in result && !!result.messageId;
+      const whatsappError = result != null && 'error' in result ? result.error : undefined;
+
+      await this.log(memberId, NotificationChannel.WHATSAPP, 'INVITATION_ACTIVATION', {
         activationLink,
         sentAt: new Date().toISOString(),
         whatsappSent,
         whatsappError,
       });
-      return { ok: true, whatsappSent, whatsappError };
+
+      if (whatsappSent) {
+        return { ok: true, whatsappSent: true };
+      }
+
+      // Fallback SMS si WhatsApp a échoué
+      if (this.sms.isConfigured()) {
+        const smsResult = await this.sms.send(phone, text);
+        const smsSent = !!smsResult;
+        await this.log(memberId, NotificationChannel.SMS, 'INVITATION_ACTIVATION_FALLBACK', {
+          activationLink,
+          sentAt: new Date().toISOString(),
+          smsSent,
+          whatsappError,
+        });
+        return { ok: true, whatsappSent: false, whatsappError };
+      }
+
+      return { ok: true, whatsappSent: false, whatsappError };
     }
-    await this.log(memberId, channel, 'INVITATION_ACTIVATION', {
+
+    // WhatsApp non configuré : tentative SMS
+    if (this.sms.isConfigured()) {
+      await this.sms.send(phone, text);
+      await this.log(memberId, NotificationChannel.SMS, 'INVITATION_ACTIVATION', {
+        activationLink,
+        sentAt: new Date().toISOString(),
+      });
+      return { ok: true };
+    }
+
+    // Aucun canal configuré : log seul
+    await this.log(memberId, NotificationChannel.WHATSAPP, 'INVITATION_ACTIVATION', {
       activationLink,
       sentAt: new Date().toISOString(),
     });
@@ -122,10 +139,15 @@ export class NotificationsService {
 
   async sendActivationOtp(phone: string, code: string) {
     const text = `Votre code d'activation AFC : ${code}. Valide 15 min. Ne partagez pas. — Amicale AFC`;
-    if (this.sms.isConfigured()) {
+    // Priorité WhatsApp, fallback SMS
+    if (this.whatsapp.isConfigured()) {
+      const result = await this.whatsapp.sendText(phone, text);
+      const whatsappSent = result != null && 'messageId' in result && !!result.messageId;
+      if (!whatsappSent && this.sms.isConfigured()) {
+        await this.sms.send(phone, text);
+      }
+    } else if (this.sms.isConfigured()) {
       await this.sms.send(phone, text);
-    } else if (this.whatsapp.isConfigured()) {
-      await this.whatsapp.sendText(phone, text);
     }
     return { ok: true };
   }

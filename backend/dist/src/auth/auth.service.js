@@ -159,6 +159,26 @@ let AuthService = class AuthService {
         const payload = { sub: memberId, purpose: 'activation' };
         return this.jwtService.sign(payload, { expiresIn });
     }
+    async getActivationPhone(activationToken) {
+        let payload;
+        try {
+            payload = this.jwtService.verify(activationToken);
+        }
+        catch {
+            throw new common_1.BadRequestException('Lien expiré. Utilisez à nouveau le lien d\'activation.');
+        }
+        if (payload.purpose !== 'activation') {
+            throw new common_1.BadRequestException('Jeton invalide.');
+        }
+        const member = await this.prisma.member.findUnique({
+            where: { id: payload.sub },
+            select: { phone: true },
+        });
+        if (!member) {
+            throw new common_1.BadRequestException('Membre introuvable.');
+        }
+        return { phone: member.phone };
+    }
     async setPassword(activationToken, password) {
         let payload;
         try {

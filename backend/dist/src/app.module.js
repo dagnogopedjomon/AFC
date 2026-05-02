@@ -22,6 +22,7 @@ const scheduler_module_1 = require("./scheduler/scheduler.module");
 const activities_module_1 = require("./activities/activities.module");
 const notifications_module_1 = require("./notifications/notifications.module");
 const health_module_1 = require("./health/health.module");
+const supabase_module_1 = require("./supabase/supabase.module");
 const jwt_auth_guard_1 = require("./auth/jwt-auth.guard");
 const http_exception_filter_1 = require("./common/filters/http-exception.filter");
 let AppModule = class AppModule {
@@ -43,6 +44,7 @@ exports.AppModule = AppModule = __decorate([
             activities_module_1.ActivitiesModule,
             notifications_module_1.NotificationsModule,
             health_module_1.HealthModule,
+            supabase_module_1.SupabaseModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [
