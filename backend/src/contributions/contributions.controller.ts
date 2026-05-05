@@ -1,6 +1,5 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ContributionsService } from './contributions.service';
-import { CinetpayService } from './cinetpay.service';
 import { CreateContributionDto } from './dto/create-contribution.dto';
 import { UpdateContributionDto } from './dto/update-contribution.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
@@ -17,7 +16,6 @@ import { Role } from '@prisma/client';
 export class ContributionsController {
   constructor(
     private readonly contributionsService: ContributionsService,
-    private readonly cinetpayService: CinetpayService,
   ) {}
 
   @Post()
@@ -74,28 +72,6 @@ export class ContributionsController {
       periodYear: dto.periodYear,
       periodMonth: dto.periodMonth,
     });
-  }
-
-  /** Initier un paiement CinetPay (cotisation). Retourne paymentUrl + transactionId. */
-  @Post('payments/cinetpay/init')
-  @UseGuards(ProfileCompletedGuard)
-  async cinetpayInit(@Req() req: { user: RequestUser }, @Body() dto: SelfPaymentDto) {
-    return this.cinetpayService.initPayment(req.user.id, {
-      contributionId: dto.contributionId,
-      amount: dto.amount,
-      periodYear: dto.periodYear,
-      periodMonth: dto.periodMonth,
-    });
-  }
-
-  /** Vérifier une transaction CinetPay après retour du user (page success). */
-  @Get('payments/cinetpay/verify/:transactionId')
-  @UseGuards(ProfileCompletedGuard)
-  async cinetpayVerify(
-    @Req() req: { user: RequestUser },
-    @Param('transactionId') transactionId: string,
-  ) {
-    return this.cinetpayService.verifyAndComplete(transactionId, req.user.id);
   }
 
   @Post('payments')

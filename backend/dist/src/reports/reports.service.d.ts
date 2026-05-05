@@ -54,10 +54,10 @@ export declare class ReportsService {
             amount: import("@prisma/client-runtime-utils").Decimal;
             cashBoxId: string | null;
             description: string;
+            requestedById: string;
             status: import("@prisma/client").$Enums.ExpenseStatus;
             expenseDate: Date;
             beneficiary: string | null;
-            requestedById: string;
             treasurerApprovedById: string | null;
             treasurerApprovedAt: Date | null;
             commissionerApprovedById: string | null;

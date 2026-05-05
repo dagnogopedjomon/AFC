@@ -47,9 +47,9 @@ export declare class ActivitiesController {
     } & {
         id: string;
         createdAt: Date;
+        authorId: string;
         title: string;
         content: string;
-        authorId: string;
     })[]>;
     createAnnouncement(dto: CreateAnnouncementDto, user: RequestUser): Promise<{
         author: {
@@ -60,18 +60,18 @@ export declare class ActivitiesController {
     } & {
         id: string;
         createdAt: Date;
+        authorId: string;
         title: string;
         content: string;
-        authorId: string;
     }>;
     findOneActivity(id: string): Promise<{
         photos: {
             id: string;
             createdAt: Date;
+            uploadedById: string;
             url: string;
             caption: string | null;
             activityId: string | null;
-            uploadedById: string;
         }[];
     } & {
         result: string | null;
@@ -104,10 +104,10 @@ export declare class ActivitiesController {
     } & {
         id: string;
         createdAt: Date;
+        uploadedById: string;
         url: string;
         caption: string | null;
         activityId: string | null;
-        uploadedById: string;
     }>;
     getPhotosByActivity(id: string): Promise<({
         uploadedBy: {
@@ -117,9 +117,9 @@ export declare class ActivitiesController {
     } & {
         id: string;
         createdAt: Date;
+        uploadedById: string;
         url: string;
         caption: string | null;
         activityId: string | null;
-        uploadedById: string;
     })[]>;
 }

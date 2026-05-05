@@ -39,10 +39,10 @@ export declare class ActivitiesService {
         photos: {
             id: string;
             createdAt: Date;
+            uploadedById: string;
             url: string;
             caption: string | null;
             activityId: string | null;
-            uploadedById: string;
         }[];
     } & {
         result: string | null;
@@ -64,9 +64,9 @@ export declare class ActivitiesService {
     } & {
         id: string;
         createdAt: Date;
+        authorId: string;
         title: string;
         content: string;
-        authorId: string;
     }>;
     findAllAnnouncements(limit?: number): Promise<({
         author: {
@@ -77,9 +77,9 @@ export declare class ActivitiesService {
     } & {
         id: string;
         createdAt: Date;
+        authorId: string;
         title: string;
         content: string;
-        authorId: string;
     })[]>;
     createPhoto(dto: CreatePhotoDto, uploadedById: string): Promise<{
         activity: {
@@ -101,10 +101,10 @@ export declare class ActivitiesService {
     } & {
         id: string;
         createdAt: Date;
+        uploadedById: string;
         url: string;
         caption: string | null;
         activityId: string | null;
-        uploadedById: string;
     }>;
     getPhotosByActivity(activityId: string): Promise<({
         uploadedBy: {
@@ -114,9 +114,9 @@ export declare class ActivitiesService {
     } & {
         id: string;
         createdAt: Date;
+        uploadedById: string;
         url: string;
         caption: string | null;
         activityId: string | null;
-        uploadedById: string;
     })[]>;
 }
