@@ -81,34 +81,34 @@ export class NotificationsService {
 
   async sendActivationInvite(memberId: string, phone: string, activationLink: string): Promise<{
     ok: boolean;
-    smsSent?: boolean;
+    smsSent: boolean;
     smsError?: string;
   }> {
     const text = `Bienvenue à l'amicale AFC ! Activez votre compte en cliquant ici : ${activationLink}`;
 
-    if (this.sms.isConfigured()) {
-      const result = await this.sms.send(phone, text);
-      const smsSent = result != null && 'messageId' in result && !!result.messageId;
-      const smsError = result != null && 'error' in result ? result.error : undefined;
-
+    if (!this.sms.isConfigured()) {
       await this.log(memberId, NotificationChannel.SMS, 'INVITATION_ACTIVATION', {
         activationLink,
         sentAt: new Date().toISOString(),
-        smsSent,
-        smsError,
+        smsSent: false,
+        smsError: 'SMS non configuré',
       });
-
-      return { ok: true, smsSent, smsError };
+      return { ok: true, smsSent: false, smsError: 'SMS non configuré' };
     }
 
-    // SMS non configuré : log seul
+    const result = await this.sms.send(phone, text);
+    const smsSent = result != null && !!result.messageId;
+
     await this.log(memberId, NotificationChannel.SMS, 'INVITATION_ACTIVATION', {
       activationLink,
       sentAt: new Date().toISOString(),
-      smsSent: false,
-      smsError: 'SMS non configuré',
+      smsSent,
     });
-    return { ok: true, smsSent: false, smsError: 'SMS non configuré' };
+
+    if (!smsSent) {
+      return { ok: true, smsSent: false, smsError: 'Échec envoi SMS' };
+    }
+    return { ok: true, smsSent: true };
   }
 
   async sendActivationOtp(phone: string, code: string) {
