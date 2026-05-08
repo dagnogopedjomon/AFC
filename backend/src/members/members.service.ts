@@ -60,8 +60,8 @@ export class MembersService {
     return {
       ...member,
       activationLink,
-      whatsappSent: inviteResult.whatsappSent,
-      whatsappError: inviteResult.whatsappError,
+      smsSent: inviteResult.smsSent,
+      smsError: inviteResult.smsError,
     };
   }
 
