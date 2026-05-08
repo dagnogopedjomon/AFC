@@ -1,9 +1,11 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, Req, UseGuards, BadRequestException } from '@nestjs/common';
 import { ContributionsService } from './contributions.service';
 import { CreateContributionDto } from './dto/create-contribution.dto';
 import { UpdateContributionDto } from './dto/update-contribution.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SelfPaymentDto } from './dto/self-payment.dto';
+import { JekoInitDto } from './dto/jeko-init.dto';
+import { JekoService } from './jeko.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ProfileCompletedGuard } from '../auth/profile-completed.guard';
 import type { RequestUser } from '../auth/jwt.strategy';
@@ -16,6 +18,7 @@ import { Role } from '@prisma/client';
 export class ContributionsController {
   constructor(
     private readonly contributionsService: ContributionsService,
+    private readonly jekoService: JekoService,
   ) {}
 
   @Post()
@@ -59,6 +62,36 @@ export class ContributionsController {
   @Roles(Role.ADMIN, Role.TREASURER)
   applySuspensions() {
     return this.contributionsService.applySuspensions();
+  }
+
+  /** Initialise un paiement Jeko (lien de paiement Wave/Orange/MTN/...). */
+  @Post('payments/jeko/init')
+  @UseGuards(ProfileCompletedGuard)
+  async jekoInit(@Req() req: { user: RequestUser }, @Body() dto: JekoInitDto) {
+    if (!this.jekoService.isConfigured()) {
+      throw new BadRequestException('Paiement en ligne non disponible pour le moment.');
+    }
+    const contribution = await this.contributionsService.findOne(dto.contributionId);
+    if (!contribution) throw new BadRequestException('Cotisation introuvable.');
+    const monthLabel = dto.periodYear && dto.periodMonth
+      ? ` – ${dto.periodMonth.toString().padStart(2, '0')}/${dto.periodYear}`
+      : '';
+    const title = `AFC – ${contribution.name}${monthLabel}`;
+    return this.jekoService.createPaymentLink({
+      amountFcfa: dto.amount,
+      title,
+      memberId: req.user.id,
+      contributionId: dto.contributionId,
+      periodYear: dto.periodYear,
+      periodMonth: dto.periodMonth,
+    });
+  }
+
+  /** Vérifie et enregistre un paiement Jeko après retour du membre. */
+  @Get('payments/jeko/verify/:linkId')
+  @UseGuards(ProfileCompletedGuard)
+  jekoVerify(@Param('linkId') linkId: string) {
+    return this.jekoService.verifyAndRecord(linkId);
   }
 
   /** Paiement par le membre pour lui-même (tous les rôles). */
