@@ -44,13 +44,15 @@ export class MembersService {
       },
       select: this.selectPublic(),
     });
-    // Lien d'activation "1 clic" : le jeton d'activation est directement inclus dans l'URL.
-    // Le membre clique sur le lien, arrive sur /activate avec ?token=..., et peut définir son mot de passe sans OTP.
-    const activationToken = this.jwtService.sign(
-      { sub: member.id, purpose: 'activation' } as { sub: string; purpose: 'activation' },
-      { expiresIn: '24h' } as any,
-    );
-    const activationLink = `${FRONTEND_URL}/activate?phone=${encodeURIComponent(member.phone)}&token=${encodeURIComponent(activationToken)}`;
+    // Code court 6 chars stocké en DB : URL courte compatible SMS (< 160 chars).
+    const { randomBytes } = await import('crypto');
+    const code = randomBytes(3).toString('hex').toUpperCase(); // ex: "A3F9C1"
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await this.prisma.member.update({
+      where: { id: member.id },
+      data: { otpCode: code, otpExpiresAt: expiresAt },
+    });
+    const activationLink = `${FRONTEND_URL}/activate?p=${encodeURIComponent(member.phone)}&c=${code}`;
     const inviteResult = await this.notifications.sendActivationInvite(
       member.id,
       member.phone,
