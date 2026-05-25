@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsString, IsNumber, IsOptional, Min, IsIn } from 'class-validator';
 
 export class JekoInitDto {
   @IsString()
@@ -15,4 +15,12 @@ export class JekoInitDto {
   @IsOptional()
   @IsNumber()
   periodMonth?: number;
+
+  @IsString()
+  @IsIn(['wave', 'orange', 'mtn', 'moov', 'djamo'])
+  paymentMethod: string;
+
+  @IsOptional()
+  @IsString()
+  payerPhone?: string;
 }

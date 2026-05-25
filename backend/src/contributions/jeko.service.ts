@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { randomUUID } from 'crypto';
 
 const JEKO_BASE = 'https://api.jeko.africa/partner_api';
 
@@ -10,6 +11,7 @@ export type PendingJekoPayment = {
   periodYear?: number;
   periodMonth?: number;
   cashBoxId?: string | null;
+  jekoRequestId: string;
 };
 
 @Injectable()
@@ -17,8 +19,10 @@ export class JekoService {
   private readonly apiKey = process.env.JEKO_API_KEY;
   private readonly apiKeyId = process.env.JEKO_API_KEY_ID;
   private readonly storeId = process.env.JEKO_STORE_ID;
+  /** Première URL du FRONTEND_URL (peut être multi-valeur séparée par virgules). */
+  private readonly frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3000').split(',')[0].trim();
 
-  /** Stockage temporaire en mémoire des paiements en attente (linkId → contexte). */
+  /** Stockage temporaire en mémoire des paiements en attente (reference → contexte). */
   private readonly pending = new Map<string, PendingJekoPayment>();
 
   constructor(private readonly prisma: PrismaService) {}
@@ -36,81 +40,104 @@ export class JekoService {
   }
 
   /**
-   * Crée un lien de paiement Jeko (usage unique).
-   * Retourne le linkId Jeko et l'URL de paiement.
+   * Crée une demande de paiement Jeko (redirect) avec successUrl/errorUrl.
+   * forceProviderDirect: true → redirige directement vers Wave/Orange/etc. sans passer par le checkout Jeko.
    */
-  async createPaymentLink(params: {
+  async createPaymentRequest(params: {
     amountFcfa: number;
-    title: string;
     memberId: string;
     contributionId: string;
     periodYear?: number;
     periodMonth?: number;
     cashBoxId?: string | null;
-  }): Promise<{ linkId: string; paymentUrl: string }> {
+    paymentMethod: string;
+    payerPhone?: string;
+  }): Promise<{ reference: string; redirectUrl: string }> {
     if (!this.isConfigured()) {
       throw new BadRequestException('Paiement en ligne non configuré (variables JEKO manquantes).');
     }
 
-    const res = await fetch(`${JEKO_BASE}/payment_links`, {
+    const reference = randomUUID();
+    const successUrl = `${this.frontendUrl}/dashboard/payment/success?ref=${reference}`;
+    const errorUrl = `${this.frontendUrl}/dashboard/cotisations?jeko_error=1`;
+
+    const paymentData: Record<string, unknown> = {
+      paymentMethod: params.paymentMethod,
+      successUrl,
+      errorUrl,
+      forceProviderDirect: true,
+    };
+    if (params.payerPhone) {
+      paymentData.payerPhone = params.payerPhone;
+    }
+
+    const res = await fetch(`${JEKO_BASE}/payment_requests`, {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify({
         storeId: this.storeId,
-        title: params.title,
-        // XOF n'a pas de centimes : amountCents = montant XOF directement (cf. doc Jeko, exemple 10000 = 10000 XOF)
+        // XOF n'a pas de centimes : amountCents = montant XOF directement
         amountCents: params.amountFcfa,
         currency: 'XOF',
-        allowMultiplePayments: false,
+        reference,
+        paymentDetails: {
+          type: 'redirect',
+          data: paymentData,
+        },
       }),
     });
 
     const data = (await res.json().catch(() => ({}))) as {
       id?: string;
-      link?: string;
+      redirectUrl?: string;
       error?: string;
       message?: string;
+      errors?: Array<{ message: string }>;
     };
 
-    if (!res.ok || !data.id || !data.link) {
-      const msg = data.error || data.message || `HTTP ${res.status}`;
-      console.error('[Jeko] createPaymentLink error:', msg, data);
-      throw new BadRequestException(`Impossible de créer le lien de paiement : ${msg}`);
+    if (!res.ok || !data.id || !data.redirectUrl) {
+      const msg = data.error || data.message || data.errors?.[0]?.message || `HTTP ${res.status}`;
+      console.error('[Jeko] createPaymentRequest error:', msg, data);
+      throw new BadRequestException(`Impossible de créer la demande de paiement : ${msg}`);
     }
 
-    console.log('[Jeko] lien créé:', data.id, data.link);
+    console.log('[Jeko] demande créée:', data.id, data.redirectUrl);
 
-    this.pending.set(data.id, {
+    this.pending.set(reference, {
       memberId: params.memberId,
       contributionId: params.contributionId,
       amountFcfa: params.amountFcfa,
       periodYear: params.periodYear,
       periodMonth: params.periodMonth,
       cashBoxId: params.cashBoxId,
+      jekoRequestId: data.id,
     });
 
-    return { linkId: data.id, paymentUrl: data.link };
+    return { reference, redirectUrl: data.redirectUrl };
   }
 
   /**
-   * Vérifie si le lien de paiement a été utilisé.
-   * Si oui, enregistre le paiement en base et retourne le Payment créé.
+   * Vérifie si la demande de paiement est confirmée (status === "success").
+   * Si oui, enregistre le paiement en base.
    */
-  async verifyAndRecord(linkId: string): Promise<{
-    paid: boolean;
-    payment?: object;
-  }> {
+  async verifyAndRecord(reference: string): Promise<{ paid: boolean; payment?: object }> {
     if (!this.isConfigured()) {
       throw new BadRequestException('Paiement en ligne non configuré.');
     }
 
-    const res = await fetch(`${JEKO_BASE}/payment_links/${linkId}`, {
+    const context = this.pending.get(reference);
+    if (!context) {
+      // Déjà traité ou référence inconnue
+      return { paid: true };
+    }
+
+    const res = await fetch(`${JEKO_BASE}/payment_requests/${context.jekoRequestId}`, {
       headers: this.headers(),
     });
 
     const data = (await res.json().catch(() => ({}))) as {
       id?: string;
-      canReceivePayments?: boolean;
+      status?: string;
       error?: string;
       message?: string;
     };
@@ -120,20 +147,12 @@ export class JekoService {
       throw new BadRequestException(`Vérification impossible : ${msg}`);
     }
 
-    // Lien encore actif → paiement pas encore effectué
-    if (data.canReceivePayments !== false) {
+    if (data.status !== 'success') {
       return { paid: false };
     }
 
-    // Paiement effectué : récupérer le contexte
-    const context = this.pending.get(linkId);
-    if (!context) {
-      // Déjà traité ou inconnu
-      return { paid: true };
-    }
-    this.pending.delete(linkId);
+    this.pending.delete(reference);
 
-    // Récupérer la caisse par défaut si pas fournie
     let cashBoxId = context.cashBoxId ?? null;
     if (!cashBoxId) {
       const defaultBox = await this.prisma.cashBox.findFirst({ where: { isDefault: true } });
@@ -148,7 +167,7 @@ export class JekoService {
         periodYear: context.periodYear,
         periodMonth: context.periodMonth,
         cashBoxId,
-        metadata: JSON.stringify({ source: 'jeko', jekoLinkId: linkId }),
+        metadata: JSON.stringify({ source: 'jeko', jekoRequestId: context.jekoRequestId, reference }),
       },
     });
 

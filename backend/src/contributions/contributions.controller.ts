@@ -64,7 +64,7 @@ export class ContributionsController {
     return this.contributionsService.applySuspensions();
   }
 
-  /** Initialise un paiement Jeko (lien de paiement Wave/Orange/MTN/...). */
+  /** Initialise un paiement Jeko (redirect Wave/Orange/MTN/...) avec successUrl/errorUrl. */
   @Post('payments/jeko/init')
   @UseGuards(ProfileCompletedGuard)
   async jekoInit(@Req() req: { user: RequestUser }, @Body() dto: JekoInitDto) {
@@ -73,25 +73,22 @@ export class ContributionsController {
     }
     const contribution = await this.contributionsService.findOne(dto.contributionId);
     if (!contribution) throw new BadRequestException('Cotisation introuvable.');
-    const monthLabel = dto.periodYear && dto.periodMonth
-      ? ` – ${dto.periodMonth.toString().padStart(2, '0')}/${dto.periodYear}`
-      : '';
-    const title = `AFC – ${contribution.name}${monthLabel}`;
-    return this.jekoService.createPaymentLink({
+    return this.jekoService.createPaymentRequest({
       amountFcfa: dto.amount,
-      title,
       memberId: req.user.id,
       contributionId: dto.contributionId,
       periodYear: dto.periodYear,
       periodMonth: dto.periodMonth,
+      paymentMethod: dto.paymentMethod,
+      payerPhone: dto.payerPhone,
     });
   }
 
-  /** Vérifie et enregistre un paiement Jeko après retour du membre. */
-  @Get('payments/jeko/verify/:linkId')
+  /** Vérifie et enregistre un paiement Jeko après retour du membre (via reference UUID). */
+  @Get('payments/jeko/verify/:reference')
   @UseGuards(ProfileCompletedGuard)
-  jekoVerify(@Param('linkId') linkId: string) {
-    return this.jekoService.verifyAndRecord(linkId);
+  jekoVerify(@Param('reference') reference: string) {
+    return this.jekoService.verifyAndRecord(reference);
   }
 
   /** Paiement par le membre pour lui-même (tous les rôles). */
