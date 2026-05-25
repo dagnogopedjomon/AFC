@@ -106,6 +106,7 @@ model Member {
   transfersRequested    CashBoxTransfer[] @relation("TransferRequester")
   transfersTreasurer    CashBoxTransfer[] @relation("TransferTreasurer")
   transfersCommissioner CashBoxTransfer[] @relation("TransferCommissioner")
+  pendingJekoPayments   PendingJekoPayment[]
 }
 
 /// Historique des actions sur un membre (invitation, mise à jour, suspension, etc.)
@@ -148,7 +149,8 @@ model Contribution {
   // Fréquence affichée (mensuel / trim. / sem. / annuel) — suivi reste mensuel en backend
   frequency    PaymentFrequency? @default(MONTHLY)
 
-  payments     Payment[]
+  payments            Payment[]
+  pendingJekoPayments PendingJekoPayment[]
 }
 
 /// Paiement effectué par un membre (cotisation mensuelle, exceptionnelle ou projet)
@@ -179,6 +181,26 @@ model Payment {
   @@index([cashBoxId])
 }
 
+
+/// Paiement Jeko initié mais pas encore confirmé (survivant aux redémarrages Render)
+model PendingJekoPayment {
+  id             String   @id @default(uuid())
+  reference      String   @unique
+  jekoRequestId  String?
+  memberId       String
+  member         Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  contributionId String
+  contribution   Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+  amountFcfa     Int
+  periodYear     Int?
+  periodMonth    Int?
+  cashBoxId      String?
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime // TTL : nettoyage automatique après 24h
+
+  @@index([reference])
+  @@index([expiresAt])
+}
 
 // ========== Module 4 : Caisse (sous-caisses type Wave, dépenses, double validation) ==========
 

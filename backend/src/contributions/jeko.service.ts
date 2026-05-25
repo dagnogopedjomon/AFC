@@ -1,29 +1,17 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
 const JEKO_BASE = 'https://api.jeko.africa/partner_api';
 
-export type PendingJekoPayment = {
-  memberId: string;
-  contributionId: string;
-  amountFcfa: number;
-  periodYear?: number;
-  periodMonth?: number;
-  cashBoxId?: string | null;
-  jekoRequestId: string;
-};
-
 @Injectable()
 export class JekoService {
+  private readonly logger = new Logger(JekoService.name);
   private readonly apiKey = process.env.JEKO_API_KEY;
   private readonly apiKeyId = process.env.JEKO_API_KEY_ID;
   private readonly storeId = process.env.JEKO_STORE_ID;
   /** Première URL du FRONTEND_URL (peut être multi-valeur séparée par virgules). */
   private readonly frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3000').split(',')[0].trim();
-
-  /** Stockage temporaire en mémoire des paiements en attente (reference → contexte). */
-  private readonly pending = new Map<string, PendingJekoPayment>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -103,14 +91,19 @@ export class JekoService {
 
     console.log('[Jeko] demande créée:', data.id, data.redirectUrl);
 
-    this.pending.set(reference, {
-      memberId: params.memberId,
-      contributionId: params.contributionId,
-      amountFcfa: params.amountFcfa,
-      periodYear: params.periodYear,
-      periodMonth: params.periodMonth,
-      cashBoxId: params.cashBoxId,
-      jekoRequestId: data.id,
+    // Persister en DB (survit aux redémarrages Render)
+    await this.prisma.pendingJekoPayment.create({
+      data: {
+        reference,
+        jekoRequestId: data.id,
+        memberId: params.memberId,
+        contributionId: params.contributionId,
+        amountFcfa: params.amountFcfa,
+        periodYear: params.periodYear,
+        periodMonth: params.periodMonth,
+        cashBoxId: params.cashBoxId,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h TTL
+      },
     });
 
     return { reference, redirectUrl: data.redirectUrl };
@@ -118,17 +111,21 @@ export class JekoService {
 
   /**
    * Vérifie si la demande de paiement est confirmée (status === "success").
-   * Si oui, enregistre le paiement en base.
+   * Si oui, enregistre le paiement en base et supprime l'entrée pending.
    */
   async verifyAndRecord(reference: string): Promise<{ paid: boolean; payment?: object }> {
     if (!this.isConfigured()) {
       throw new BadRequestException('Paiement en ligne non configuré.');
     }
 
-    const context = this.pending.get(reference);
+    // Chercher le contexte en DB
+    const context = await this.prisma.pendingJekoPayment.findUnique({ where: { reference } });
     if (!context) {
-      // Déjà traité ou référence inconnue
-      return { paid: true };
+      // Déjà traité ou référence inconnue → on considère payé (idempotent)
+      const existing = await this.prisma.payment.findFirst({
+        where: { metadata: { contains: reference } },
+      });
+      return { paid: !!existing };
     }
 
     const res = await fetch(`${JEKO_BASE}/payment_requests/${context.jekoRequestId}`, {
@@ -151,7 +148,30 @@ export class JekoService {
       return { paid: false };
     }
 
-    this.pending.delete(reference);
+    return this.recordPaymentFromContext(context, reference);
+  }
+
+  /**
+   * Appelé par le webhook Jeko (transaction.completed).
+   * Enregistre automatiquement le paiement sans action côté membre.
+   */
+  async recordFromWebhook(reference: string): Promise<{ recorded: boolean }> {
+    const context = await this.prisma.pendingJekoPayment.findUnique({ where: { reference } });
+    if (!context) {
+      this.logger.warn(`[Webhook] référence inconnue ou déjà traitée : ${reference}`);
+      return { recorded: false };
+    }
+    await this.recordPaymentFromContext(context, reference);
+    return { recorded: true };
+  }
+
+  /** Logique commune d'enregistrement du paiement (partagée verify + webhook). */
+  private async recordPaymentFromContext(
+    context: { memberId: string; contributionId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null },
+    reference: string,
+  ): Promise<{ paid: boolean; payment: object }> {
+    // Supprimer le pending (idempotence)
+    await this.prisma.pendingJekoPayment.deleteMany({ where: { reference } });
 
     let cashBoxId = context.cashBoxId ?? null;
     if (!cashBoxId) {
@@ -171,7 +191,15 @@ export class JekoService {
       },
     });
 
-    console.log('[Jeko] paiement enregistré:', payment.id);
+    this.logger.log(`[Jeko] paiement enregistré: ${payment.id}`);
     return { paid: true, payment };
+  }
+
+  /** Nettoyage des pending expirés (appelé par un scheduler). */
+  async cleanExpired(): Promise<number> {
+    const result = await this.prisma.pendingJekoPayment.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+    return result.count;
   }
 }
