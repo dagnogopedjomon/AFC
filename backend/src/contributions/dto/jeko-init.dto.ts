@@ -5,8 +5,8 @@ export class JekoInitDto {
   contributionId: string;
 
   @IsNumber()
-  @Min(100)
-  amount: number; // FCFA
+  @Min(10000)
+  amount: number; // FCFA (minimum Jeko = 10 000 XOF)
 
   @IsOptional()
   @IsNumber()
