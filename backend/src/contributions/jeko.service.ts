@@ -76,8 +76,8 @@ export class JekoService {
       headers: this.headers(),
       body: JSON.stringify({
         storeId: this.storeId,
-        // XOF n'a pas de centimes : amountCents = montant XOF directement
-        amountCents: params.amountFcfa,
+        // amountCents en centimes : 100 FCFA = 10 000 centimes (confirmé Jeko)
+        amountCents: params.amountFcfa * 100,
         currency: 'XOF',
         reference,
         paymentDetails: {
