@@ -159,6 +159,37 @@ export class ContributionsService {
     return result;
   }
 
+  /** Alias utilisé par le scheduler de relance. */
+  async findActiveMonthlyCotisation() {
+    return this.prisma.contribution.findFirst({
+      where: { type: ContributionType.MONTHLY },
+    });
+  }
+
+  /**
+   * Membres actifs (profileCompleted, non-admin) sans paiement pour le mois donné.
+   * Utilisé par le scheduler de relance Jeko.
+   */
+  async findUnpaidMembersForMonth(year: number, month: number, contributionId: string) {
+    const paidIds = await this.prisma.payment
+      .findMany({
+        where: { contributionId, periodYear: year, periodMonth: month },
+        select: { memberId: true },
+      })
+      .then((rows) => new Set(rows.map((r) => r.memberId)));
+
+    return this.prisma.member.findMany({
+      where: {
+        id: { notIn: [...paidIds] },
+        profileCompleted: true,
+        isSuspended: false,
+        role: { not: Role.ADMIN },
+      },
+      select: { id: true, firstName: true, lastName: true, phone: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+  }
+
   /** Membres en retard pour une période donnée (cotisation mensuelle). */
   async getMembersInArrears(periodYear: number, periodMonth: number) {
     const monthly = await this.findMonthlyContribution();

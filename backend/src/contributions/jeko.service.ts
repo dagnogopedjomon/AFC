@@ -155,14 +155,25 @@ export class JekoService {
    * Appelé par le webhook Jeko (transaction.completed).
    * Enregistre automatiquement le paiement sans action côté membre.
    */
-  async recordFromWebhook(reference: string): Promise<{ recorded: boolean }> {
+  async recordFromWebhook(reference: string): Promise<{
+    recorded: boolean;
+    context?: { memberId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null };
+  }> {
     const context = await this.prisma.pendingJekoPayment.findUnique({ where: { reference } });
     if (!context) {
       this.logger.warn(`[Webhook] référence inconnue ou déjà traitée : ${reference}`);
       return { recorded: false };
     }
     await this.recordPaymentFromContext(context, reference);
-    return { recorded: true };
+    return {
+      recorded: true,
+      context: {
+        memberId: context.memberId,
+        amountFcfa: context.amountFcfa,
+        periodYear: context.periodYear,
+        periodMonth: context.periodMonth,
+      },
+    };
   }
 
   /** Logique commune d'enregistrement du paiement (partagée verify + webhook). */

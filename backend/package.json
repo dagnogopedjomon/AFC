@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "build:prod": "prisma migrate deploy && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -35,6 +36,7 @@
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
     "@supabase/supabase-js": "^2.98.0",
+    "@types/nodemailer": "^8.0.1",
     "@vonage/server-sdk": "^3.26.0",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
@@ -42,6 +44,7 @@
     "dotenv": "^17.2.3",
     "helmet": "^8.1.0",
     "multer": "^2.0.2",
+    "nodemailer": "^8.0.11",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
