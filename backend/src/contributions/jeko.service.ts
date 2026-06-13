@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
+import { normalizeE164 } from '../notifications/sayelesend.util';
 
 const JEKO_BASE = 'https://api.jeko.africa/partner_api';
 
@@ -56,7 +57,7 @@ export class JekoService {
       forceProviderDirect: true,
     };
     if (params.payerPhone) {
-      paymentData.payerPhone = params.payerPhone;
+      paymentData.payerPhone = normalizeE164(params.payerPhone);
     }
 
     const res = await fetch(`${JEKO_BASE}/payment_requests`, {
