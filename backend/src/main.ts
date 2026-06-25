@@ -31,6 +31,11 @@ async function bootstrap() {
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
   );
 
+  const apiPrefix = process.env.API_PREFIX?.trim().replace(/^\/+|\/+$/g, '');
+  if (apiPrefix) {
+    app.setGlobalPrefix(apiPrefix);
+  }
+
   const frontendUrlRaw = process.env.FRONTEND_URL?.trim() || '';
   const allowedOrigins = frontendUrlRaw
     .split(',')
