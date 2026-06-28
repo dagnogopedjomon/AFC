@@ -25,8 +25,14 @@ enum Role {
 
 enum ContributionType {
   MONTHLY      // Cotisation mensuelle obligatoire
-  EXCEPTIONAL  // Équipements, événements, tournois (date début/fin)
+  EXCEPTIONAL  // Équipements, événements, tournois, cadeaux (montant libre, clôture manuelle)
   PROJECT      // Dons, actions sociales (objectif + suivi)
+}
+
+enum ContributionStatus {
+  OPEN              // Cotisation visible et payable
+  CLOSED_PENDING    // Clôturée, en attente de remise au bénéficiaire
+  CLOSED_DELIVERED  // Clôturée et remise : plus de paiement possible
 }
 
 enum PaymentFrequency {
@@ -107,6 +113,8 @@ model Member {
   transfersTreasurer    CashBoxTransfer[] @relation("TransferTreasurer")
   transfersCommissioner CashBoxTransfer[] @relation("TransferCommissioner")
   pendingJekoPayments   PendingJekoPayment[]
+  beneficiaryContributions Contribution[] @relation("BeneficiaryContributions")
+  allocationsPerformed  ContributionAllocation[]
 }
 
 /// Historique des actions sur un membre (invitation, mise à jour, suspension, etc.)
@@ -136,9 +144,26 @@ model Contribution {
   type         ContributionType
 
   // Mensuelle : montant par mois, échéance 10
-  amount       Decimal? @db.Decimal(12, 2) // Montant (mensuel ou unitaire)
+  // Exceptionnelle : montant suggéré (peut être null si libre)
+  amount       Decimal? @db.Decimal(12, 2)
 
-  // Exceptionnelle : date début / fin, chacun peut payer plusieurs fois
+  // Exceptionnelle : montant libre (chaque membre paye ce qu'il veut)
+  isOpenAmount Boolean  @default(false)
+
+  // Exceptionnelle : date de clôture affichée en rouge clignotant
+  deadline     DateTime?
+
+  // Exceptionnelle : membres concernés (JSON array d'IDs). Null = ouvert à tous.
+  targetMemberIds String? @db.Text
+
+  // Exceptionnelle : bénéficiaire qui ne voit pas la liste des contributeurs après remise
+  beneficiaryMemberId String?
+  beneficiary         Member? @relation("BeneficiaryContributions", fields: [beneficiaryMemberId], references: [id], onDelete: SetNull)
+
+  // Statut de clôture (principalement pour les exceptionnelles)
+  status       ContributionStatus @default(OPEN)
+
+  // Exceptionnelle : date début / fin (optionnel)
   startDate    DateTime?
   endDate      DateTime?
 
@@ -151,6 +176,31 @@ model Contribution {
 
   payments            Payment[]
   pendingJekoPayments PendingJekoPayment[]
+  allocations         ContributionAllocation[]
+
+  @@index([beneficiaryMemberId])
+  @@index([status])
+}
+
+/// Allocation de fonds depuis une caisse vers une cotisation exceptionnelle (traçabilité)
+model ContributionAllocation {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+
+  contributionId String
+  contribution   Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+
+  fromCashBoxId  String?
+  fromCashBox    CashBox? @relation(fields: [fromCashBoxId], references: [id], onDelete: SetNull)
+
+  amount         Decimal  @db.Decimal(12, 2)
+  description    String?  @db.Text
+
+  performedById  String?
+  performedBy    Member?  @relation(fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([contributionId])
+  @@index([fromCashBoxId])
 }
 
 /// Paiement effectué par un membre (cotisation mensuelle, exceptionnelle ou projet)
@@ -218,6 +268,7 @@ model CashBox {
 
   expenses      Expense[]
   payments      Payment[]
+  allocationsFrom ContributionAllocation[]
   transfersFrom CashBoxTransfer[] @relation("TransferFrom")
   transfersTo   CashBoxTransfer[] @relation("TransferTo")
 

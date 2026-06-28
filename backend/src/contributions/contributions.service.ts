@@ -28,6 +28,11 @@ export class ContributionsService {
         name: dto.name,
         type: dto.type,
         amount,
+        isOpenAmount: dto.isOpenAmount ?? false,
+        deadline: dto.deadline ? new Date(dto.deadline) : null,
+        targetMemberIds: dto.targetMemberIds && dto.targetMemberIds.length > 0 ? JSON.stringify(dto.targetMemberIds) : null,
+        beneficiaryMemberId: dto.beneficiaryMemberId ?? null,
+        status: dto.status ?? 'OPEN',
         startDate: dto.startDate ? new Date(dto.startDate) : null,
         endDate: dto.endDate ? new Date(dto.endDate) : null,
         targetAmount,
@@ -37,14 +42,23 @@ export class ContributionsService {
     });
   }
 
-  /** Mettre à jour une cotisation (montant, dates, nom) — Admin/Trésorier. */
+  /** Mettre à jour une cotisation (montant, dates, nom, champs exceptionnelles) — Admin/Trésorier. */
   async update(id: string, dto: UpdateContributionDto) {
     const existing = await this.prisma.contribution.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Cotisation introuvable');
 
     const data: Prisma.ContributionUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
-    if (dto.amount !== undefined) data.amount = new Prisma.Decimal(dto.amount);
+    if (dto.amount !== undefined) data.amount = dto.amount != null ? new Prisma.Decimal(dto.amount) : null;
+    if (dto.isOpenAmount !== undefined) data.isOpenAmount = dto.isOpenAmount;
+    if (dto.deadline !== undefined) data.deadline = dto.deadline ? new Date(dto.deadline) : null;
+    if (dto.targetMemberIds !== undefined) {
+      data.targetMemberIds = dto.targetMemberIds && dto.targetMemberIds.length > 0 ? JSON.stringify(dto.targetMemberIds) : null;
+    }
+    if (dto.beneficiaryMemberId !== undefined) {
+      data.beneficiary = dto.beneficiaryMemberId ? { connect: { id: dto.beneficiaryMemberId } } : { disconnect: true };
+    }
+    if (dto.status !== undefined) data.status = dto.status;
     if (dto.startDate !== undefined) data.startDate = dto.startDate ? new Date(dto.startDate) : null;
     if (dto.endDate !== undefined) data.endDate = dto.endDate ? new Date(dto.endDate) : null;
 
@@ -54,10 +68,18 @@ export class ContributionsService {
     });
   }
 
-  async findAll() {
+  async findAll(memberId?: string) {
+    const where: Prisma.ContributionWhereInput = {};
+    if (memberId) {
+      where.OR = [
+        { targetMemberIds: null },
+        { targetMemberIds: { contains: `"${memberId}"` } },
+      ];
+    }
     return this.prisma.contribution.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { payments: true } } },
+      include: { _count: { select: { payments: true } }, beneficiary: { select: { id: true, firstName: true, lastName: true } } },
     });
   }
 
@@ -91,9 +113,20 @@ export class ContributionsService {
     });
     if (!member) throw new NotFoundException('Membre introuvable');
 
+    if (contribution.status === 'CLOSED_DELIVERED') {
+      throw new BadRequestException('Cette cotisation est clôturée et remise : les paiements ne sont plus acceptés.');
+    }
+
     if (contribution.type === ContributionType.EXCEPTIONAL && contribution.endDate) {
       if (new Date() > new Date(contribution.endDate)) {
         throw new BadRequestException('Cette cotisation exceptionnelle est clôturée (date de fin dépassée).');
+      }
+    }
+
+    if (contribution.type === ContributionType.EXCEPTIONAL && contribution.targetMemberIds) {
+      const ids = JSON.parse(contribution.targetMemberIds) as string[];
+      if (!ids.includes(dto.memberId)) {
+        throw new BadRequestException('Vous n\'êtes pas concerné par cette cotisation.');
       }
     }
 
@@ -434,5 +467,88 @@ export class ContributionsService {
     }
 
     return { unpaidMonths, monthlyContributionId: monthly.id };
+  }
+
+  /** Allouer des fonds depuis une caisse vers une cotisation exceptionnelle (traçabilité). */
+  async allocateFunds(dto: { contributionId: string; amount: number; fromCashBoxId?: string; description?: string; performedById?: string }) {
+    const contribution = await this.prisma.contribution.findUnique({ where: { id: dto.contributionId } });
+    if (!contribution) throw new NotFoundException('Cotisation introuvable');
+    if (contribution.type !== ContributionType.EXCEPTIONAL) {
+      throw new BadRequestException('Seules les cotisations exceptionnelles peuvent recevoir une allocation.');
+    }
+
+    const amount = new Prisma.Decimal(dto.amount);
+    return this.prisma.$transaction(async (tx) => {
+      const allocation = await tx.contributionAllocation.create({
+        data: {
+          contributionId: dto.contributionId,
+          fromCashBoxId: dto.fromCashBoxId ?? null,
+          amount,
+          description: dto.description ?? null,
+          performedById: dto.performedById ?? null,
+        },
+      });
+
+      if (dto.fromCashBoxId) {
+        // Mise à jour du solde de la caisse source (décrémenter le solde virtuel)
+        await tx.cashBox.update({
+          where: { id: dto.fromCashBoxId },
+          data: {},
+        });
+      }
+
+      return allocation;
+    });
+  }
+
+  /** Liste des contributeurs d'une cotisation exceptionnelle (nom + montant). */
+  async getContributors(contributionId: string) {
+    const contribution = await this.prisma.contribution.findUnique({ where: { id: contributionId } });
+    if (!contribution) throw new NotFoundException('Cotisation introuvable');
+
+    const payments = await this.prisma.payment.findMany({
+      where: { contributionId },
+      orderBy: { paidAt: 'desc' },
+      include: { member: { select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true } } },
+    });
+
+    const totalFromMembers = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const allocations = await this.prisma.contributionAllocation.findMany({
+      where: { contributionId },
+      include: { fromCashBox: { select: { id: true, name: true } }, performedBy: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    const totalFromCashBox = allocations.reduce((sum, a) => sum + Number(a.amount), 0);
+
+    return {
+      payments: payments.map((p) => ({
+        id: p.id,
+        memberId: p.memberId,
+        firstName: p.member.firstName,
+        lastName: p.member.lastName,
+        profilePhotoUrl: p.member.profilePhotoUrl,
+        amount: Number(p.amount),
+        paidAt: p.paidAt,
+      })),
+      allocations,
+      totalFromMembers,
+      totalFromCashBox,
+      total: totalFromMembers + totalFromCashBox,
+    };
+  }
+
+  /** Clôturer une cotisation exceptionnelle. */
+  async closeContribution(id: string, status: 'CLOSED_PENDING' | 'CLOSED_DELIVERED', performedById?: string) {
+    const contribution = await this.prisma.contribution.findUnique({ where: { id } });
+    if (!contribution) throw new NotFoundException('Cotisation introuvable');
+    if (contribution.type !== ContributionType.EXCEPTIONAL) {
+      throw new BadRequestException('Seules les cotisations exceptionnelles peuvent être clôturées via cette action.');
+    }
+    if (contribution.status === 'CLOSED_DELIVERED') {
+      throw new BadRequestException('Cette cotisation est déjà clôturée et remise.');
+    }
+    return this.prisma.contribution.update({
+      where: { id },
+      data: { status },
+    });
   }
 }

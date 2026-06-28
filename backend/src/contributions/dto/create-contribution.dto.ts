@@ -6,8 +6,10 @@ import {
   IsNumber,
   Min,
   IsDateString,
+  IsBoolean,
+  IsArray,
 } from 'class-validator';
-import { ContributionType, PaymentFrequency } from '@prisma/client';
+import { ContributionType, ContributionStatus, PaymentFrequency } from '@prisma/client';
 
 export class CreateContributionDto {
   @IsNotEmpty({ message: 'Le nom est requis' })
@@ -21,6 +23,27 @@ export class CreateContributionDto {
   @IsNumber()
   @Min(0)
   amount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isOpenAmount?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  deadline?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  targetMemberIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  beneficiaryMemberId?: string;
+
+  @IsOptional()
+  @IsEnum(ContributionStatus)
+  status?: ContributionStatus;
 
   @IsOptional()
   @IsDateString()

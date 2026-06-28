@@ -6,6 +6,7 @@ import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SelfPaymentDto } from './dto/self-payment.dto';
 import { JekoInitDto } from './dto/jeko-init.dto';
 import { JekoLinkDto } from './dto/jeko-link.dto';
+import { AllocateContributionDto } from './dto/allocate-contribution.dto';
 import { JekoService } from './jeko.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ProfileCompletedGuard } from '../auth/profile-completed.guard';
@@ -38,8 +39,17 @@ export class ContributionsController {
 
   @Get()
   @UseGuards(ProfileCompletedGuard)
-  findAll() {
-    return this.contributionsService.findAll();
+  findAll(@Req() req: { user: RequestUser }) {
+    return this.contributionsService.findAll(req.user.id);
+  }
+
+  /** Cotisations exceptionnelles visibles par le membre connecté. */
+  @Get('exceptional')
+  @UseGuards(ProfileCompletedGuard)
+  findExceptional(@Req() req: { user: RequestUser }) {
+    return this.contributionsService.findAll(req.user.id).then((list) =>
+      list.filter((c) => c.type === 'EXCEPTIONAL'),
+    );
   }
 
   /** Cotisation mensuelle (tous les membres pour connaître le montant à payer). */
@@ -47,6 +57,43 @@ export class ContributionsController {
   @UseGuards(ProfileCompletedGuard)
   getMonthly() {
     return this.contributionsService.findMonthlyContribution();
+  }
+
+  /** Contributeurs d'une cotisation exceptionnelle (nom + montant) + allocations caisse. */
+  @Get(':id/contributors')
+  @UseGuards(ProfileCompletedGuard)
+  getContributors(@Param('id') id: string) {
+    return this.contributionsService.getContributors(id);
+  }
+
+  /** Allouer des fonds depuis une caisse vers une cotisation exceptionnelle. */
+  @Post(':id/allocate')
+  @UseGuards(ProfileCompletedGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.TREASURER)
+  allocate(
+    @Req() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() dto: AllocateContributionDto,
+  ) {
+    return this.contributionsService.allocateFunds({
+      contributionId: id,
+      amount: dto.amount,
+      fromCashBoxId: dto.fromCashBoxId,
+      description: dto.description,
+      performedById: req.user.id,
+    });
+  }
+
+  /** Clôturer / remettre une cotisation exceptionnelle. */
+  @Post(':id/close')
+  @UseGuards(ProfileCompletedGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.TREASURER)
+  close(
+    @Req() req: { user: RequestUser },
+    @Param('id') id: string,
+    @Body() body: { status: 'CLOSED_PENDING' | 'CLOSED_DELIVERED' },
+  ) {
+    return this.contributionsService.closeContribution(id, body.status, req.user.id);
   }
 
   @Get('arrears')

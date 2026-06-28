@@ -1,4 +1,5 @@
-import { IsOptional, IsString, IsNumber, Min, IsDateString } from 'class-validator';
+import { IsOptional, IsString, IsNumber, Min, IsDateString, IsBoolean, IsArray, IsEnum } from 'class-validator';
+import { ContributionStatus } from '@prisma/client';
 
 export class UpdateContributionDto {
   @IsOptional()
@@ -9,6 +10,27 @@ export class UpdateContributionDto {
   @IsNumber()
   @Min(0)
   amount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isOpenAmount?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  deadline?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  targetMemberIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  beneficiaryMemberId?: string;
+
+  @IsOptional()
+  @IsEnum(ContributionStatus)
+  status?: ContributionStatus;
 
   @IsOptional()
   @IsDateString()
