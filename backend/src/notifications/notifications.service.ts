@@ -154,22 +154,22 @@ export class NotificationsService {
       select: { phone: true, firstName: true, lastName: true },
     });
     if (!member) throw new NotFoundException('Membre introuvable');
-    const text = `Bonjour ${member.firstName},\n\nRappel : votre cotisation pour ${periodLabel} est attendue. Merci de régler au plus tôt.\n\n— Amicale AFC`;
-    let whatsappMessageId: string | undefined;
-    if (this.whatsapp.isConfigured()) {
-      const result = await this.whatsapp.sendText(member.phone, text);
-      whatsappMessageId = result != null && 'messageId' in result ? result.messageId : undefined;
+    const text = `Bonjour ${member.firstName},\n\nRappel : votre cotisation pour ${periodLabel} est attendue. Merci de régler au plus tôt via l'application AFC.\n\n— Amicale AFC`;
+    let smsSent = false;
+    if (this.sms.isConfigured()) {
+      const result = await this.sms.send(member.phone, text);
+      smsSent = result != null && !!result.messageId;
     }
-    await this.log(memberId, NotificationChannel.WHATSAPP, 'RAPPEL_COTISATION', {
+    await this.log(memberId, NotificationChannel.SMS, 'RAPPEL_COTISATION', {
       period: periodLabel,
       sentAt: new Date().toISOString(),
-      whatsappMessageId: whatsappMessageId ?? undefined,
+      smsSent,
     });
     return {
       ok: true,
-      message: this.whatsapp.isConfigured()
-        ? (whatsappMessageId ? 'Rappel envoyé par WhatsApp.' : 'Envoi WhatsApp échoué, log enregistré.')
-        : 'Rappel enregistré (WhatsApp non configuré).',
+      message: this.sms.isConfigured()
+        ? (smsSent ? 'Rappel envoyé par SMS.' : 'Envoi SMS échoué, log enregistré.')
+        : 'Rappel enregistré (SMS non configuré).',
     };
   }
 
