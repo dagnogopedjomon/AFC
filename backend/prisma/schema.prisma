@@ -187,6 +187,7 @@ model PendingJekoPayment {
   id             String   @id @default(uuid())
   reference      String   @unique
   jekoRequestId  String?
+  jekoLinkId     String?
   memberId       String
   member         Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
   contributionId String

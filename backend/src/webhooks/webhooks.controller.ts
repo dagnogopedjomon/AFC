@@ -49,27 +49,31 @@ export class WebhooksController {
       transactionDetails?: {
         reference?: string;
         id?: string;
+        paymentLinkId?: string;
       };
       amount?: { amount?: number; currency?: string };
     };
 
-    this.logger.log(`[Webhook Jeko] event reçu: ${payload.transactionType} / ${payload.status} / ref=${payload.transactionDetails?.reference}`);
+    const reference = payload.transactionDetails?.reference;
+    const paymentLinkId = payload.transactionDetails?.paymentLinkId;
+    this.logger.log(`[Webhook Jeko] event reçu: ${payload.transactionType} / ${payload.status} / ref=${reference ?? '-'} / linkId=${paymentLinkId ?? '-'}`);
 
     // 3. Traiter uniquement les paiements réussis
     if (payload.transactionType !== 'payment' || payload.status !== 'success') {
       return res.status(200).json({ received: true, processed: false });
     }
 
-    const reference = payload.transactionDetails?.reference;
-    if (!reference) {
-      this.logger.warn('[Webhook Jeko] Pas de référence dans transactionDetails');
+    if (!reference && !paymentLinkId) {
+      this.logger.warn('[Webhook Jeko] Pas de référence ni de paymentLinkId dans transactionDetails');
       return res.status(200).json({ received: true, processed: false });
     }
 
     // 4. Enregistrer le paiement automatiquement
     try {
-      const result = await this.jekoService.recordFromWebhook(reference);
-      this.logger.log(`[Webhook Jeko] ${result.recorded ? 'Paiement enregistré' : 'Déjà traité'} pour ref=${reference}`);
+      const result = reference
+        ? await this.jekoService.recordFromWebhook(reference)
+        : await this.jekoService.recordFromWebhookByLinkId(paymentLinkId!);
+      this.logger.log(`[Webhook Jeko] ${result.recorded ? 'Paiement enregistré' : 'Déjà traité'} pour ref=${reference ?? paymentLinkId}`);
 
       // 5. Envoyer confirmation SMS + email (fire & forget)
       if (result.recorded && result.context) {

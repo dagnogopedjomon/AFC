@@ -111,7 +111,68 @@ export class JekoService {
   }
 
   /**
-   * Vérifie si la demande de paiement est confirmée (status === "success").
+   * Crée un lien de paiement Jeko (supporte carte bancaire + mobile money via checkout).
+   * Retourne la référence interne et l'URL publique du lien.
+   */
+  async createPaymentLink(params: {
+    amountFcfa: number;
+    memberId: string;
+    contributionId: string;
+    periodYear?: number;
+    periodMonth?: number;
+    cashBoxId?: string | null;
+    title: string;
+  }): Promise<{ reference: string; link: string }> {
+    if (!this.isConfigured()) {
+      throw new BadRequestException('Paiement en ligne non configuré (variables JEKO manquantes).');
+    }
+
+    const reference = randomUUID();
+    const res = await fetch(`${JEKO_BASE}/payment_links`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        storeId: this.storeId,
+        title: params.title,
+        amountCents: params.amountFcfa * 100,
+        currency: 'XOF',
+        allowMultiplePayments: false,
+      }),
+    });
+
+    const data = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      link?: string;
+      error?: string;
+      message?: string;
+      errors?: Array<{ message: string }>;
+    };
+
+    if (!res.ok || !data.id || !data.link) {
+      const msg = data.error || data.message || data.errors?.[0]?.message || `HTTP ${res.status}`;
+      console.error('[Jeko] createPaymentLink error:', msg, data);
+      throw new BadRequestException(`Impossible de créer le lien de paiement : ${msg}`);
+    }
+
+    await this.prisma.pendingJekoPayment.create({
+      data: {
+        reference,
+        jekoLinkId: data.id,
+        memberId: params.memberId,
+        contributionId: params.contributionId,
+        amountFcfa: params.amountFcfa,
+        periodYear: params.periodYear,
+        periodMonth: params.periodMonth,
+        cashBoxId: params.cashBoxId,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+    });
+
+    return { reference, link: data.link };
+  }
+
+  /**
+   * Vérifie si la demande de paiement ou le lien de paiement est confirmé.
    * Si oui, enregistre le paiement en base et supprime l'entrée pending.
    */
   async verifyAndRecord(reference: string): Promise<{ paid: boolean; payment?: object }> {
@@ -127,6 +188,27 @@ export class JekoService {
         where: { metadata: { contains: reference } },
       });
       return { paid: !!existing };
+    }
+
+    if (context.jekoLinkId) {
+      const res = await fetch(`${JEKO_BASE}/payment_links/${context.jekoLinkId}`, {
+        headers: this.headers(),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        id?: string;
+        canReceivePayments?: boolean;
+        allowMultiplePayments?: boolean;
+        error?: string;
+        message?: string;
+      };
+      if (!res.ok) {
+        const msg = data.error || data.message || `HTTP ${res.status}`;
+        throw new BadRequestException(`Vérification impossible : ${msg}`);
+      }
+      if (data.canReceivePayments === false) {
+        return this.recordPaymentFromContext(context, reference);
+      }
+      return { paid: false };
     }
 
     const res = await fetch(`${JEKO_BASE}/payment_requests/${context.jekoRequestId}`, {
@@ -177,9 +259,30 @@ export class JekoService {
     };
   }
 
+  async recordFromWebhookByLinkId(paymentLinkId: string): Promise<{
+    recorded: boolean;
+    context?: { memberId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null };
+  }> {
+    const context = await this.prisma.pendingJekoPayment.findFirst({ where: { jekoLinkId: paymentLinkId } });
+    if (!context) {
+      this.logger.warn(`[Webhook] paymentLinkId inconnu ou déjà traité : ${paymentLinkId}`);
+      return { recorded: false };
+    }
+    await this.recordPaymentFromContext(context, context.reference);
+    return {
+      recorded: true,
+      context: {
+        memberId: context.memberId,
+        amountFcfa: context.amountFcfa,
+        periodYear: context.periodYear,
+        periodMonth: context.periodMonth,
+      },
+    };
+  }
+
   /** Logique commune d'enregistrement du paiement (partagée verify + webhook). */
   private async recordPaymentFromContext(
-    context: { memberId: string; contributionId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null },
+    context: { memberId: string; contributionId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null; jekoLinkId: string | null },
     reference: string,
   ): Promise<{ paid: boolean; payment: object }> {
     // Supprimer le pending (idempotence)
@@ -199,7 +302,7 @@ export class JekoService {
         periodYear: context.periodYear,
         periodMonth: context.periodMonth,
         cashBoxId,
-        metadata: JSON.stringify({ source: 'jeko', jekoRequestId: context.jekoRequestId, reference }),
+        metadata: JSON.stringify({ source: 'jeko', jekoRequestId: context.jekoRequestId, jekoLinkId: context.jekoLinkId, reference }),
       },
     });
 

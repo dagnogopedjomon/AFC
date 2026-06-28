@@ -5,6 +5,7 @@ import { UpdateContributionDto } from './dto/update-contribution.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SelfPaymentDto } from './dto/self-payment.dto';
 import { JekoInitDto } from './dto/jeko-init.dto';
+import { JekoLinkDto } from './dto/jeko-link.dto';
 import { JekoService } from './jeko.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ProfileCompletedGuard } from '../auth/profile-completed.guard';
@@ -81,6 +82,25 @@ export class ContributionsController {
       periodMonth: dto.periodMonth,
       paymentMethod: dto.paymentMethod,
       payerPhone: dto.payerPhone,
+    });
+  }
+
+  /** Crée un lien de paiement Jeko (checkout avec carte bancaire + mobile money). */
+  @Post('payments/jeko/link')
+  @UseGuards(ProfileCompletedGuard)
+  async jekoLink(@Req() req: { user: RequestUser }, @Body() dto: JekoLinkDto) {
+    if (!this.jekoService.isConfigured()) {
+      throw new BadRequestException('Paiement en ligne non disponible pour le moment.');
+    }
+    const contribution = await this.contributionsService.findOne(dto.contributionId);
+    if (!contribution) throw new BadRequestException('Cotisation introuvable.');
+    return this.jekoService.createPaymentLink({
+      amountFcfa: dto.amount,
+      memberId: req.user.id,
+      contributionId: dto.contributionId,
+      periodYear: dto.periodYear,
+      periodMonth: dto.periodMonth,
+      title: dto.title,
     });
   }
 
