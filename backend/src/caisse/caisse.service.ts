@@ -300,9 +300,60 @@ export class CaisseService {
     };
   }
 
+  /** Calcule le solde actuel d'une sous-caisse. */
+  async getCashBoxBalance(cashBoxId: string): Promise<number> {
+    const box = await this.prisma.cashBox.findUnique({ where: { id: cashBoxId } });
+    if (!box) throw new NotFoundException('Sous-caisse introuvable');
+
+    const isDefault = box.isDefault;
+    const paymentWhere = isDefault
+      ? { OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+      : { cashBoxId: box.id };
+    const expenseWhere = {
+      status: ExpenseStatus.APPROVED,
+      ...(isDefault
+        ? { OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+        : { cashBoxId: box.id }),
+    };
+
+    const allocationEntriesWhere = { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.ALLOCATION, toCashBoxId: box.id };
+    const withdrawalExitsWhere = { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.WITHDRAWAL, fromCashBoxId: box.id };
+    const allocationExitsWhere = isDefault
+      ? { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.ALLOCATION, OR: [{ fromCashBoxId: box.id }, { fromCashBoxId: null }] }
+      : { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.ALLOCATION, fromCashBoxId: box.id };
+    const withdrawalEntriesWhere = isDefault
+      ? { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.WITHDRAWAL, OR: [{ toCashBoxId: box.id }, { toCashBoxId: null }] }
+      : { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.WITHDRAWAL, toCashBoxId: box.id };
+
+    const [paymentsSum, expensesSum, allocIn, withdrawOut, allocOut, withdrawIn] = await Promise.all([
+      this.prisma.payment.aggregate({ where: paymentWhere, _sum: { amount: true } }),
+      this.prisma.expense.aggregate({ where: expenseWhere, _sum: { amount: true } }),
+      this.prisma.cashBoxTransfer.aggregate({ where: allocationEntriesWhere, _sum: { amount: true } }),
+      this.prisma.cashBoxTransfer.aggregate({ where: withdrawalExitsWhere, _sum: { amount: true } }),
+      this.prisma.cashBoxTransfer.aggregate({ where: allocationExitsWhere, _sum: { amount: true } }),
+      this.prisma.cashBoxTransfer.aggregate({ where: withdrawalEntriesWhere, _sum: { amount: true } }),
+    ]);
+
+    const entries =
+      Number(paymentsSum._sum.amount ?? 0) +
+      Number(allocIn._sum.amount ?? 0) +
+      Number(withdrawIn._sum.amount ?? 0);
+    const exits =
+      Number(expensesSum._sum.amount ?? 0) +
+      Number(withdrawOut._sum.amount ?? 0) +
+      Number(allocOut._sum.amount ?? 0);
+    return entries - exits;
+  }
+
   async createExpense(dto: CreateExpenseDto, requestedById: string) {
     const cashBoxId = dto.cashBoxId ?? (await this.getDefaultCashBoxId());
     const amount = new Prisma.Decimal(dto.amount);
+
+    const balance = await this.getCashBoxBalance(cashBoxId);
+    if (Number(amount) > balance) {
+      throw new BadRequestException(`Solde insuffisant dans cette caisse (solde : ${balance.toLocaleString('fr-FR')} FCFA).`);
+    }
+
     return this.prisma.expense.create({
       data: {
         amount,
@@ -375,6 +426,11 @@ export class CaisseService {
     const expense = await this.findOneExpense(expenseId);
     if (expense.status !== ExpenseStatus.PENDING_COMMISSIONER) {
       throw new BadRequestException('Cette dépense n’est pas en attente de validation par le commissaire.');
+    }
+    const cashBoxId = expense.cashBoxId ?? (await this.getDefaultCashBoxId());
+    const balance = await this.getCashBoxBalance(cashBoxId);
+    if (Number(expense.amount) > balance) {
+      throw new BadRequestException(`Solde insuffisant dans cette caisse pour approuver cette dépense (solde : ${balance.toLocaleString('fr-FR')} FCFA).`);
     }
     return this.prisma.expense.update({
       where: { id: expenseId },
