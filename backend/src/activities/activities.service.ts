@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateActivityDto } from './dto/create-activity.dto';
+import { UpdateActivityDto } from './dto/update-activity.dto';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { CreatePhotoDto } from './dto/create-photo.dto';
 
@@ -63,6 +64,36 @@ export class ActivitiesService {
     });
     if (!a) throw new NotFoundException('Activité introuvable');
     return a;
+  }
+
+  async updateActivity(id: string, dto: UpdateActivityDto) {
+    const a = await this.findOneActivity(id);
+    return this.prisma.activity.update({
+      where: { id },
+      data: {
+        ...(dto.type !== undefined && { type: dto.type }),
+        ...(dto.title !== undefined && { title: dto.title.trim() }),
+        ...(dto.description !== undefined && { description: dto.description?.trim() || null }),
+        ...(dto.date !== undefined && { date: new Date(dto.date) }),
+        ...(dto.endDate !== undefined && { endDate: dto.endDate ? new Date(dto.endDate) : null }),
+        ...(dto.result !== undefined && { result: dto.result?.trim() || null }),
+      },
+      include: { photos: true },
+    });
+  }
+
+  async deleteActivity(id: string) {
+    const a = await this.findOneActivity(id);
+    await this.prisma.photo.deleteMany({ where: { activityId: id } });
+    await this.prisma.activity.delete({ where: { id } });
+    return { success: true };
+  }
+
+  async deletePhoto(id: string) {
+    const p = await this.prisma.photo.findUnique({ where: { id } });
+    if (!p) throw new NotFoundException('Photo introuvable');
+    await this.prisma.photo.delete({ where: { id } });
+    return { success: true };
   }
 
   async createAnnouncement(dto: CreateAnnouncementDto, authorId: string) {
