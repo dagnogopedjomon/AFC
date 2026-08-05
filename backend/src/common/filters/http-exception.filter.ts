@@ -26,9 +26,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const responseBody = isHttp
       ? exception.getResponse()
       : { statusCode: 500, message: 'Erreur interne du serveur' };
-    const finalMessage = typeof responseBody === 'object' && responseBody !== null && 'message' in responseBody
-      ? (responseBody as { message?: string | string[] }).message
-      : 'Erreur serveur';
+    const finalMessage = typeof responseBody === 'string'
+      ? responseBody
+      : typeof responseBody === 'object' && responseBody !== null && 'message' in responseBody
+        ? (responseBody as { message?: string | string[] }).message
+        : exception instanceof Error && exception.message
+          ? exception.message
+          : 'Erreur serveur';
 
     if (status >= 500) {
       this.logger.error(
@@ -39,8 +43,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     res.status(status).json(
       typeof responseBody === 'object' && responseBody !== null
-        ? { ...responseBody, statusCode: status }
-        : { statusCode: status, message: finalMessage },
+        ? {
+          ...responseBody,
+          statusCode: status,
+          message: finalMessage ?? (status >= 500 ? 'Erreur interne du serveur' : undefined),
+        }
+        : { statusCode: status, message: finalMessage ?? 'Erreur interne du serveur' },
     );
   }
 }
