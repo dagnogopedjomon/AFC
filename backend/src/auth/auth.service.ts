@@ -27,6 +27,31 @@ export interface AuthResult {
 const OTP_EXPIRY_MINUTES = 15;
 const SALT_ROUNDS = 10;
 
+function phoneLookupCandidates(input: string): string[] {
+  const trimmed = input.trim();
+  const digits = trimmed.replace(/\D/g, '');
+  const candidates = new Set<string>();
+
+  if (trimmed) candidates.add(trimmed);
+  if (digits) candidates.add(digits);
+
+  // Côte d'Ivoire : on essaie le format local, le format +225, et la version digits-only.
+  if (digits.length === 10) {
+    candidates.add('0' + digits.slice(-9));
+    candidates.add('+225' + digits);
+    candidates.add('225' + digits);
+  } else if (digits.length === 11 && digits.startsWith('225')) {
+    const local = digits.slice(3);
+    candidates.add(local);
+    candidates.add('+' + digits);
+    candidates.add('+225' + local);
+  } else if (digits.length > 11 && digits.startsWith('225')) {
+    candidates.add('+' + digits);
+  }
+
+  return [...candidates];
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -38,9 +63,14 @@ export class AuthService {
   ) {}
 
   async validateUser(phone: string, password: string) {
-    const member = await this.prisma.member.findUnique({
-      where: { phone: phone.trim() },
-    });
+    const phoneCandidates = phoneLookupCandidates(phone);
+    let member = null as Awaited<ReturnType<PrismaService['member']['findUnique']>>;
+
+    for (const candidate of phoneCandidates) {
+      member = await this.prisma.member.findUnique({ where: { phone: candidate } });
+      if (member) break;
+    }
+
     if (!member || !member.passwordHash) return null;
     try {
       const ok = await bcrypt.compare(password, member.passwordHash);
