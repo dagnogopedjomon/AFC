@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -29,6 +29,8 @@ const SALT_ROUNDS = 10;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -50,31 +52,43 @@ export class AuthService {
   }
 
   async login(phone: string, password: string): Promise<AuthResult> {
-    const member = await this.validateUser(phone, password);
-    if (!member) {
-      throw new UnauthorizedException('Téléphone ou mot de passe incorrect');
-    }
-    if (member.isSuspended && member.role !== Role.ADMIN) {
-      throw new ForbiddenException(
-        "Compte suspendu pour non-paiement. Contactez l'administrateur.",
+    try {
+      const member = await this.validateUser(phone, password);
+      if (!member) {
+        throw new UnauthorizedException('Téléphone ou mot de passe incorrect');
+      }
+      if (member.isSuspended && member.role !== Role.ADMIN) {
+        throw new ForbiddenException(
+          "Compte suspendu pour non-paiement. Contactez l'administrateur.",
+        );
+      }
+      const payload: JwtPayload = { sub: member.id, phone: member.phone, role: member.role };
+      const access_token = this.jwtService.sign(payload);
+      return {
+        access_token,
+        user: {
+          id: member.id,
+          phone: member.phone,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          role: member.role,
+          profileCompleted: member.profileCompleted,
+          profilePhotoUrl: member.profilePhotoUrl,
+          email: member.email,
+          isSuspended: member.isSuspended,
+        },
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      this.logger.error(
+        `[Auth] Login failed for phone=${phone.trim()}`,
+        error instanceof Error ? error.stack : String(error),
       );
+      const message = error instanceof Error ? error.message : 'Erreur inconnue';
+      throw new InternalServerErrorException(`Erreur lors de la connexion: ${message}`);
     }
-    const payload: JwtPayload = { sub: member.id, phone: member.phone, role: member.role };
-    const access_token = this.jwtService.sign(payload);
-    return {
-      access_token,
-      user: {
-        id: member.id,
-        phone: member.phone,
-        firstName: member.firstName,
-        lastName: member.lastName,
-        role: member.role,
-        profileCompleted: member.profileCompleted,
-        profilePhotoUrl: member.profilePhotoUrl,
-        email: member.email,
-        isSuspended: member.isSuspended,
-      },
-    };
   }
 
   async findById(id: string) {
