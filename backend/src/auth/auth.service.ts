@@ -71,6 +71,8 @@ export class AuthService {
   async validateUser(phone: string, password: string) {
     const member = await findMemberByPhone(this.prisma, phone);
 
+    this.logger.debug?.(`[Auth] login phone=${phone.trim()} candidates=${phoneLookupCandidates(phone).join(',')}`);
+
     if (!member || !member.passwordHash) return null;
     try {
       const ok = await bcrypt.compare(password, member.passwordHash);
