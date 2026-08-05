@@ -40,16 +40,22 @@ function phoneLookupCandidates(input: string): string[] {
     candidates.add('0' + digits.slice(-9));
     candidates.add('+225' + digits);
     candidates.add('225' + digits);
-  } else if (digits.length === 11 && digits.startsWith('225')) {
+  } else if (digits.startsWith('225') && digits.length >= 11) {
     const local = digits.slice(3);
     candidates.add(local);
     candidates.add('+' + digits);
     candidates.add('+225' + local);
-  } else if (digits.length > 11 && digits.startsWith('225')) {
-    candidates.add('+' + digits);
+    candidates.add('225' + local);
   }
 
   return [...candidates];
+}
+
+async function findMemberByPhone(prisma: PrismaService, phone: string) {
+  const phoneCandidates = phoneLookupCandidates(phone);
+  return prisma.member.findFirst({
+    where: { phone: { in: phoneCandidates } },
+  });
 }
 
 @Injectable()
@@ -63,13 +69,7 @@ export class AuthService {
   ) {}
 
   async validateUser(phone: string, password: string) {
-    const phoneCandidates = phoneLookupCandidates(phone);
-    let member = null as Awaited<ReturnType<PrismaService['member']['findUnique']>>;
-
-    for (const candidate of phoneCandidates) {
-      member = await this.prisma.member.findUnique({ where: { phone: candidate } });
-      if (member) break;
-    }
+    const member = await findMemberByPhone(this.prisma, phone);
 
     if (!member || !member.passwordHash) return null;
     try {
@@ -142,9 +142,7 @@ export class AuthService {
   }
 
   async sendActivationOtp(phone: string) {
-    const member = await this.prisma.member.findUnique({
-      where: { phone: phone.trim() },
-    });
+    const member = await findMemberByPhone(this.prisma, phone);
     if (!member) {
       throw new BadRequestException('Ce numéro n’est pas enregistré. Demandez une invitation au club.');
     }
@@ -167,9 +165,7 @@ export class AuthService {
   }
 
   async verifyActivationOtp(phone: string, code: string) {
-    const member = await this.prisma.member.findUnique({
-      where: { phone: phone.trim() },
-    });
+    const member = await findMemberByPhone(this.prisma, phone);
     if (!member || !member.otpCode || !member.otpExpiresAt) {
       throw new BadRequestException('Code invalide ou expiré.');
     }
