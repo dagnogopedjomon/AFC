@@ -40,8 +40,12 @@ export class AuthService {
       where: { phone: phone.trim() },
     });
     if (!member || !member.passwordHash) return null;
-    const ok = await bcrypt.compare(password, member.passwordHash);
-    if (!ok) return null;
+    try {
+      const ok = await bcrypt.compare(password, member.passwordHash);
+      if (!ok) return null;
+    } catch {
+      return null;
+    }
     return member;
   }
 
