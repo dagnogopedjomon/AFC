@@ -1,9 +1,9 @@
 /**
- * Diagnostic login : reproduit pas à pas ce que fait AuthService.login()
- * et affiche l'erreur réelle (stack complète) à chaque étape.
+ * Diagnostic login : reproduit exactement AuthService.validateUser()
  *
  * Usage (depuis backend/) :
  *   node scripts/diag-login.js 0600000000 password123
+ *   node scripts/diag-login.js +2250600000000 password123
  */
 require('dotenv/config');
 
@@ -34,6 +34,29 @@ function connectionStringWithoutSslQueryParams(connectionString) {
   return rest ? `${base}?${rest}` : base;
 }
 
+function phoneLookupCandidates(input) {
+  const trimmed = input.trim();
+  const digits = trimmed.replace(/\D/g, '');
+  const candidates = new Set();
+
+  if (trimmed) candidates.add(trimmed);
+  if (digits) candidates.add(digits);
+
+  if (digits.length === 10) {
+    candidates.add('0' + digits.slice(-9));
+    candidates.add('+225' + digits);
+    candidates.add('225' + digits);
+  } else if (digits.startsWith('225') && digits.length >= 11) {
+    const local = digits.slice(3);
+    candidates.add(local);
+    candidates.add('+' + digits);
+    candidates.add('+225' + local);
+    candidates.add('225' + local);
+  }
+
+  return [...candidates];
+}
+
 (async () => {
   line('1. Variables d environnement');
   const required = ['DATABASE_URL', 'JWT_SECRET'];
@@ -46,7 +69,7 @@ function connectionStringWithoutSslQueryParams(connectionString) {
   if (!process.env.DATABASE_URL) fail('DATABASE_URL absent', new Error('DATABASE_URL manquant'));
 
   line('2. Chargement des modules');
-  let PrismaClient, PrismaPg, Pool, bcrypt, jwt;
+  let PrismaClient, PrismaPg, Pool, bcrypt;
   try {
     ({ PrismaClient } = require('@prisma/client'));
     console.log('@prisma/client        : OK');
@@ -63,10 +86,6 @@ function connectionStringWithoutSslQueryParams(connectionString) {
     bcrypt = require('bcrypt');
     console.log('bcrypt (natif)        : OK');
   } catch (e) { fail('require bcrypt (module natif mal compilé ?)', e); }
-  try {
-    jwt = require('jsonwebtoken');
-    console.log('jsonwebtoken          : OK');
-  } catch (e) { fail('require jsonwebtoken', e); }
 
   line('3. Connexion base de données');
   let prisma;
@@ -90,32 +109,47 @@ function connectionStringWithoutSslQueryParams(connectionString) {
     console.log('connexion    : OK');
   } catch (e) { fail('connexion Prisma', e); }
 
-  line('4. Recherche du membre (findUnique sur phone)');
+  line('4. Candidats de téléphone');
+  const candidates = phoneLookupCandidates(phone);
+  console.log('input        :', phone);
+  console.log('candidates   :', candidates);
+
+  line('5. Recherche du membre (findFirst avec candidates)');
   let member;
   try {
-    member = await prisma.member.findUnique({ where: { phone } });
-    console.log('recherche    : OK');
-    console.log('trouvé       :', member ? 'oui' : 'NON');
+    member = await prisma.member.findFirst({
+      where: { phone: { in: candidates } },
+    });
+    console.log('trouvé       :', member ? 'OUI' : 'NON');
     if (member) {
       console.log('id           :', member.id);
+      console.log('phone        :', member.phone);
       console.log('role         :', member.role);
       console.log('isSuspended  :', member.isSuspended);
-      console.log('passwordHash :', member.passwordHash ? 'présent' : 'ABSENT (compte non activé)');
+      console.log('passwordHash :', member.passwordHash ? 'présent' : 'ABSENT');
     }
-  } catch (e) { fail('prisma.member.findUnique', e); }
+  } catch (e) { fail('prisma.member.findFirst', e); }
 
   if (!member) {
     line('RESULTAT');
-    console.log(`Aucun membre avec le téléphone "${phone}".`);
+    console.log(`Aucun membre avec les téléphones candidats pour "${phone}".`);
     const all = await prisma.member.findMany({ select: { phone: true, role: true }, take: 20 });
     console.log('Numéros existants en base (20 max) :');
     all.forEach((m) => console.log('  -', m.phone, '/', m.role));
-    console.log('\n=> Le login renverrait 401, pas 500.');
+    console.log('\n=> Le login renverrait 401 (membre non trouvé).');
     await prisma.$disconnect();
     return;
   }
 
-  line('5. Vérification du mot de passe (bcrypt.compare)');
+  if (!member.passwordHash) {
+    line('RESULTAT');
+    console.log('Membre trouvé mais passwordHash est absent.');
+    console.log('=> Le login renverrait 401 (compte non activé).');
+    await prisma.$disconnect();
+    return;
+  }
+
+  line('6. Vérification du mot de passe (bcrypt.compare)');
   let ok = false;
   try {
     ok = await bcrypt.compare(password, member.passwordHash);
@@ -123,22 +157,8 @@ function connectionStringWithoutSslQueryParams(connectionString) {
     console.log('mot de passe :', ok ? 'CORRECT' : 'INCORRECT');
   } catch (e) { fail('bcrypt.compare', e); }
 
-  line('6. Signature du JWT');
-  try {
-    const token = jwt.sign(
-      { sub: member.id, phone: member.phone, role: member.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' },
-    );
-    console.log('signature    : OK');
-    console.log('token (début):', token.slice(0, 32) + '...');
-  } catch (e) { fail('jwt.sign', e); }
-
   line('RESULTAT');
-  console.log('Toutes les étapes du login fonctionnent.');
-  console.log('Statut attendu :', ok ? '200 (connexion réussie)' : '401 (mot de passe incorrect)');
-  console.log('\nSi l API renvoie quand même 500, le problème est ailleurs');
-  console.log('(build dist obsolète, ou app non redémarrée).');
+  console.log(ok ? '=> Le login devrait réussir (200).' : '=> Le login renverrait 401 (mauvais mot de passe).');
 
   await prisma.$disconnect();
 })().catch((e) => fail('erreur inattendue', e));
