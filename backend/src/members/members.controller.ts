@@ -72,6 +72,11 @@ export class MembersController {
     return this.membersService.findAll();
   }
 
+  @Get('count')
+  count() {
+    return this.membersService.count();
+  }
+
   @Get('me')
   getMe(@CurrentUser() user: RequestUser) {
     return this.membersService.findOne(user.id);

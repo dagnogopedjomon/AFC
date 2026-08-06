@@ -100,6 +100,11 @@ export class MembersService {
     });
   }
 
+  async count() {
+    const count = await this.prisma.member.count();
+    return { count };
+  }
+
   async findOne(id: string) {
     const member = await this.prisma.member.findUnique({
       where: { id },
