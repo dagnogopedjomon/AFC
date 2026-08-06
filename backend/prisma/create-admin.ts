@@ -14,8 +14,8 @@ const pool = new Pool({
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-const phone = (process.env.ADMIN_PHONE || '0600000000').trim();
-const password = process.env.ADMIN_PASSWORD || 'password123';
+const phone = (process.argv[2] || process.env.ADMIN_PHONE || '0600000000').trim();
+const password = process.argv[3] || process.env.ADMIN_PASSWORD || 'password123';
 const firstName = (process.env.ADMIN_FIRST_NAME || 'Admin').trim();
 const lastName = (process.env.ADMIN_LAST_NAME || 'AFC').trim();
 const profilePhotoUrl = process.env.ADMIN_PROFILE_PHOTO_URL || 'https://api.dicebear.com/7.x/avataaars/svg?seed=AFC';
@@ -23,6 +23,9 @@ const profileCompleted = process.env.ADMIN_PROFILE_COMPLETED === 'true';
 const isSuspended = process.env.ADMIN_IS_SUSPENDED === 'true';
 
 async function main() {
+  if (!phone) throw new Error('Phone manquant. Usage: npm run create-admin -- <phone> <password>');
+  if (!password) throw new Error('Password manquant. Usage: npm run create-admin -- <phone> <password>');
+
   const passwordHash = await bcrypt.hash(password, 10);
   const existing = await prisma.member.findUnique({ where: { phone } });
 
