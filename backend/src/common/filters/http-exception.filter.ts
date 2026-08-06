@@ -23,9 +23,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const isHttp = exception instanceof HttpException;
     const status = isHttp ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+    const defaultMessage = exception instanceof Error && exception.message ? exception.message : 'Erreur interne du serveur';
     const responseBody = isHttp
       ? exception.getResponse()
-      : { statusCode: 500, message: 'Erreur interne du serveur' };
+      : { statusCode: 500, message: defaultMessage };
     const finalMessage = typeof responseBody === 'string'
       ? responseBody
       : typeof responseBody === 'object' && responseBody !== null && 'message' in responseBody
