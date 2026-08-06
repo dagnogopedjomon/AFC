@@ -70,8 +70,9 @@ export class AuthService {
 
   async validateUser(phone: string, password: string) {
     const member = await findMemberByPhone(this.prisma, phone);
+    const candidates = phoneLookupCandidates(phone).join(',');
 
-    this.logger.debug?.(`[Auth] login phone=${phone.trim()} candidates=${phoneLookupCandidates(phone).join(',')}`);
+    this.logger.log(`[Auth] login phone=${phone.trim()} candidates=[${candidates}] found=${!!member} hasPassword=${!!member?.passwordHash}`);
 
     if (!member || !member.passwordHash) return null;
     try {
