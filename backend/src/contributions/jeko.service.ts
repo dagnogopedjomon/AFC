@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 import { normalizeE164 } from '../notifications/sayelesend.util';
+import { ContributionType, Prisma } from '@prisma/client';
 
 const JEKO_BASE = 'https://api.jeko.africa/partner_api';
 
@@ -285,29 +286,118 @@ export class JekoService {
     context: { memberId: string; contributionId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null; jekoLinkId: string | null },
     reference: string,
   ): Promise<{ paid: boolean; payment: object }> {
-    // Supprimer le pending (idempotence)
-    await this.prisma.pendingJekoPayment.deleteMany({ where: { reference } });
-
     let cashBoxId = context.cashBoxId ?? null;
     if (!cashBoxId) {
       const defaultBox = await this.prisma.cashBox.findFirst({ where: { isDefault: true } });
       cashBoxId = defaultBox?.id ?? null;
     }
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        memberId: context.memberId,
-        contributionId: context.contributionId,
-        amount: context.amountFcfa,
-        periodYear: context.periodYear,
-        periodMonth: context.periodMonth,
-        cashBoxId,
-        metadata: JSON.stringify({ source: 'jeko', jekoRequestId: context.jekoRequestId, jekoLinkId: context.jekoLinkId, reference }),
-      },
+    const contribution = await this.prisma.contribution.findUnique({
+      where: { id: context.contributionId },
+      select: { type: true, amount: true },
     });
 
-    this.logger.log(`[Jeko] paiement enregistré: ${payment.id}`);
-    return { paid: true, payment };
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Le pending est consommé dans la même transaction que les paiements :
+      // un échec ne peut donc pas perdre la référence Jeko.
+      const consumed = await tx.pendingJekoPayment.deleteMany({ where: { reference } });
+      if (consumed.count === 0) {
+        const existing = await tx.payment.findFirst({ where: { metadata: { contains: reference } } });
+        return { payment: existing ?? {}, paymentsCount: existing ? 1 : 0, reactivated: false };
+      }
+
+      const metadataBase = {
+        source: 'jeko',
+        jekoRequestId: context.jekoRequestId,
+        jekoLinkId: context.jekoLinkId,
+        reference,
+      };
+
+      if (contribution?.type === ContributionType.MONTHLY && contribution.amount) {
+        const member = await tx.member.findUnique({
+          where: { id: context.memberId },
+          select: { createdAt: true },
+        });
+        const payments = await tx.payment.findMany({
+          where: {
+            memberId: context.memberId,
+            contributionId: context.contributionId,
+            periodYear: { not: null },
+            periodMonth: { not: null },
+          },
+          select: { periodYear: true, periodMonth: true },
+        });
+        const paidSet = new Set(payments.map((p) => `${p.periodYear}-${p.periodMonth}`));
+        const unpaidMonths: Array<{ year: number; month: number }> = [];
+        const now = new Date();
+        let year = now.getFullYear();
+        let month = now.getMonth() + 1;
+        const startYear = member?.createdAt.getFullYear() ?? year;
+        const startMonth = member ? member.createdAt.getMonth() + 1 : month;
+
+        for (let i = 0; i < 12; i++) {
+          if (year < startYear || (year === startYear && month < startMonth)) break;
+          if (!paidSet.has(`${year}-${month}`)) unpaidMonths.push({ year, month });
+          month--;
+          if (month < 1) {
+            month = 12;
+            year--;
+          }
+        }
+
+        const monthlyAmount = Number(contribution.amount);
+        const coveredCount = Math.min(unpaidMonths.length, Math.floor(context.amountFcfa / monthlyAmount));
+        const coveredMonths = unpaidMonths.slice(0, coveredCount);
+        const paymentRows: Prisma.PaymentCreateManyInput[] = coveredMonths.map((period) => ({
+          memberId: context.memberId,
+          contributionId: context.contributionId,
+          amount: monthlyAmount,
+          periodYear: period.year,
+          periodMonth: period.month,
+          cashBoxId,
+          metadata: JSON.stringify({ ...metadataBase, bulkMonthlyPayment: true }),
+        }));
+        const allocatedAmount = coveredCount * monthlyAmount;
+        const remainder = context.amountFcfa - allocatedAmount;
+        if (remainder > 0) {
+          paymentRows.push({
+            memberId: context.memberId,
+            contributionId: context.contributionId,
+            amount: remainder,
+            periodYear: null,
+            periodMonth: null,
+            cashBoxId,
+            metadata: JSON.stringify({ ...metadataBase, unallocatedRemainder: true }),
+          });
+        }
+
+        if (paymentRows.length > 0) await tx.payment.createMany({ data: paymentRows });
+        const reactivated = coveredCount === unpaidMonths.length && unpaidMonths.length > 0;
+        if (reactivated) {
+          await tx.member.update({
+            where: { id: context.memberId },
+            data: { isSuspended: false, reactivatedAt: null },
+          });
+        }
+        return { payment: { reference, monthsPaid: coveredMonths }, paymentsCount: paymentRows.length, reactivated };
+      }
+
+      const payment = await tx.payment.create({
+        data: {
+          memberId: context.memberId,
+          contributionId: context.contributionId,
+          amount: context.amountFcfa,
+          periodYear: context.periodYear,
+          periodMonth: context.periodMonth,
+          cashBoxId,
+          metadata: JSON.stringify(metadataBase),
+        },
+      });
+      return { payment, paymentsCount: 1, reactivated: false };
+    });
+
+    this.logger.log(`[Jeko] ${result.paymentsCount} paiement(s) enregistré(s), réactivation=${result.reactivated}`);
+    return { paid: result.paymentsCount > 0, payment: result.payment };
   }
 
   /** Nettoyage des pending expirés (appelé par un scheduler). */
