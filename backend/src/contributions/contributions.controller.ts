@@ -54,7 +54,6 @@ export class ContributionsController {
 
   /** Cotisation mensuelle (tous les membres pour connaître le montant à payer). */
   @Get('monthly')
-  @UseGuards(ProfileCompletedGuard)
   getMonthly() {
     return this.contributionsService.findMonthlyContribution();
   }
@@ -227,7 +226,6 @@ export class ContributionsController {
 
   /** Résumé de la dette du membre : montant total dû + détail par mois */
   @Get('me/debt')
-  @UseGuards(ProfileCompletedGuard)
   getMyDebtSummary(@Req() req: { user: RequestUser }) {
     return this.contributionsService.getMyDebtSummary(req.user.id);
   }
