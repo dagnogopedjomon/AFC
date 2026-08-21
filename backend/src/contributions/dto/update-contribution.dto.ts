@@ -39,4 +39,8 @@ export class UpdateContributionDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  allowPartialPayment?: boolean;
 }

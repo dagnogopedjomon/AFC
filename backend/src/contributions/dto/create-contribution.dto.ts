@@ -61,4 +61,8 @@ export class CreateContributionDto {
   @IsOptional()
   @IsEnum(PaymentFrequency)
   frequency?: PaymentFrequency;
+
+  @IsOptional()
+  @IsBoolean()
+  allowPartialPayment?: boolean;
 }

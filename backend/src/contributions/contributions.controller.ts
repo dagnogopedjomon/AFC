@@ -225,6 +225,13 @@ export class ContributionsController {
     return this.contributionsService.getMyUnpaidMonths(req.user.id);
   }
 
+  /** Résumé de la dette du membre : montant total dû + détail par mois */
+  @Get('me/debt')
+  @UseGuards(ProfileCompletedGuard)
+  getMyDebtSummary(@Req() req: { user: RequestUser }) {
+    return this.contributionsService.getMyDebtSummary(req.user.id);
+  }
+
   @Get(':id')
   @UseGuards(ProfileCompletedGuard)
   findOne(@Param('id') id: string) {

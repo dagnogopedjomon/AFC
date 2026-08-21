@@ -38,6 +38,7 @@ export class ContributionsService {
         targetAmount,
         receivedAmount: dto.type === 'PROJECT' ? new Prisma.Decimal(0) : null,
         frequency: dto.frequency ?? 'MONTHLY',
+        allowPartialPayment: dto.allowPartialPayment ?? false,
       },
     });
   }
@@ -61,6 +62,7 @@ export class ContributionsService {
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.startDate !== undefined) data.startDate = dto.startDate ? new Date(dto.startDate) : null;
     if (dto.endDate !== undefined) data.endDate = dto.endDate ? new Date(dto.endDate) : null;
+    if (dto.allowPartialPayment !== undefined) data.allowPartialPayment = dto.allowPartialPayment;
 
     return this.prisma.contribution.update({
       where: { id },
@@ -467,6 +469,71 @@ export class ContributionsService {
     }
 
     return { unpaidMonths, monthlyContributionId: monthly.id };
+  }
+
+  /** Résumé de la dette du membre : montant total dû + détail par mois */
+  async getMyDebtSummary(memberId: string) {
+    const monthly = await this.prisma.contribution.findFirst({
+      where: { type: ContributionType.MONTHLY },
+    });
+    if (!monthly || !monthly.amount) {
+      return { totalOwed: 0, monthlyAmount: 0, unpaidMonths: [], monthlyContributionId: null };
+    }
+
+    const member = await this.prisma.member.findUnique({
+      where: { id: memberId },
+      select: { createdAt: true },
+    });
+    if (!member) {
+      return { totalOwed: 0, monthlyAmount: Number(monthly.amount), unpaidMonths: [], monthlyContributionId: monthly.id };
+    }
+
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        memberId,
+        contributionId: monthly.id,
+        periodYear: { not: null },
+        periodMonth: { not: null },
+      },
+      select: { periodYear: true, periodMonth: true },
+    });
+    const paidSet = new Set(payments.map((p) => `${p.periodYear}-${p.periodMonth}`));
+
+    const now = new Date();
+    const joinDate = member.createdAt;
+    const startYear = joinDate.getFullYear();
+    const startMonth = joinDate.getMonth() + 1;
+
+    let y = now.getFullYear();
+    let m = now.getMonth() + 1;
+    const unpaidMonths: { year: number; month: number; amount: number; label: string }[] = [];
+    const monthLabels = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
+    for (let i = 0; i < 12; i++) {
+      if (y < startYear || (y === startYear && m < startMonth)) break;
+      if (!paidSet.has(`${y}-${m}`)) {
+        unpaidMonths.push({
+          year: y,
+          month: m,
+          amount: Number(monthly.amount),
+          label: `${monthLabels[m - 1]} ${y}`,
+        });
+      }
+      m--;
+      if (m < 1) {
+        m = 12;
+        y--;
+      }
+    }
+
+    const totalOwed = unpaidMonths.reduce((sum, m) => sum + m.amount, 0);
+
+    return {
+      totalOwed,
+      monthlyAmount: Number(monthly.amount),
+      unpaidMonths,
+      monthlyContributionId: monthly.id,
+    };
   }
 
   /** Allouer des fonds depuis une caisse vers une cotisation exceptionnelle (traçabilité). */
