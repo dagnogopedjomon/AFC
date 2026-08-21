@@ -113,7 +113,6 @@ export class ContributionsController {
 
   /** Initialise un paiement Jeko (redirect Wave/Orange/MTN/...) avec successUrl/errorUrl. */
   @Post('payments/jeko/init')
-  @UseGuards(ProfileCompletedGuard)
   async jekoInit(@Req() req: { user: RequestUser }, @Body() dto: JekoInitDto) {
     if (!this.jekoService.isConfigured()) {
       throw new BadRequestException('Paiement en ligne non disponible pour le moment.');
@@ -133,7 +132,6 @@ export class ContributionsController {
 
   /** Crée un lien de paiement Jeko (checkout avec carte bancaire + mobile money). */
   @Post('payments/jeko/link')
-  @UseGuards(ProfileCompletedGuard)
   async jekoLink(@Req() req: { user: RequestUser }, @Body() dto: JekoLinkDto) {
     if (!this.jekoService.isConfigured()) {
       throw new BadRequestException('Paiement en ligne non disponible pour le moment.');
@@ -152,7 +150,6 @@ export class ContributionsController {
 
   /** Vérifie et enregistre un paiement Jeko après retour du membre (via reference UUID). */
   @Get('payments/jeko/verify/:reference')
-  @UseGuards(ProfileCompletedGuard)
   jekoVerify(@Param('reference') reference: string) {
     return this.jekoService.verifyAndRecord(reference);
   }
