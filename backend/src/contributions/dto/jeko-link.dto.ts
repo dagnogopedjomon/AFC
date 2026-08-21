@@ -18,4 +18,8 @@ export class JekoLinkDto {
 
   @IsString()
   title: string;
+
+  @IsOptional()
+  @IsString()
+  regularizationAgreementId?: string;
 }

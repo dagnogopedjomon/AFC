@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { ContributionsService } from '../contributions/contributions.service';
 import { JekoService } from '../contributions/jeko.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RegularizationsService } from '../regularizations/regularizations.service';
 
 @Injectable()
 export class SuspensionsScheduler {
@@ -12,6 +13,7 @@ export class SuspensionsScheduler {
     private readonly contributionsService: ContributionsService,
     private readonly jekoService: JekoService,
     private readonly notifications: NotificationsService,
+    private readonly regularizations: RegularizationsService,
   ) {}
 
   /** Appliquer les suspensions chaque jour à 00:05 (après le 10, membres sans paiement du mois → suspendus). */
@@ -24,6 +26,17 @@ export class SuspensionsScheduler {
       }
     } catch (err) {
       console.error('[Scheduler] Erreur applySuspensions:', err);
+    }
+  }
+
+  /** Re-suspendre chaque heure les membres dont l'accord par tranches est arrivé à échéance. */
+  @Cron('15 * * * *')
+  async handleRegularizationDeadlines() {
+    try {
+      const result = await this.regularizations.reapplyOverdueSuspensions();
+      if (result.applied > 0) this.logger.log(`Régularisations échues : ${result.applied} membre(s) re-suspendu(s).`);
+    } catch (err) {
+      this.logger.error('Erreur regularization deadlines:', err);
     }
   }
 

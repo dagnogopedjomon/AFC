@@ -127,6 +127,7 @@ export class ContributionsController {
       periodMonth: dto.periodMonth,
       paymentMethod: dto.paymentMethod,
       payerPhone: dto.payerPhone,
+      regularizationAgreementId: dto.regularizationAgreementId,
     });
   }
 
@@ -145,6 +146,7 @@ export class ContributionsController {
       periodYear: dto.periodYear,
       periodMonth: dto.periodMonth,
       title: dto.title,
+      regularizationAgreementId: dto.regularizationAgreementId,
     });
   }
 

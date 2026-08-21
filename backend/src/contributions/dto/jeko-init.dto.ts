@@ -23,4 +23,8 @@ export class JekoInitDto {
   @IsOptional()
   @IsString()
   payerPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  regularizationAgreementId?: string;
 }

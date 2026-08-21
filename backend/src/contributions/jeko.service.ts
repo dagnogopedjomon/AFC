@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 import { normalizeE164 } from '../notifications/sayelesend.util';
-import { ContributionType, Prisma } from '@prisma/client';
+import { ContributionType, Prisma, RegularizationStatus } from '@prisma/client';
 
 const JEKO_BASE = 'https://api.jeko.africa/partner_api';
 
@@ -42,10 +42,13 @@ export class JekoService {
     cashBoxId?: string | null;
     paymentMethod: string;
     payerPhone?: string;
+    regularizationAgreementId?: string;
   }): Promise<{ reference: string; redirectUrl: string }> {
     if (!this.isConfigured()) {
       throw new BadRequestException('Paiement en ligne non configuré (variables JEKO manquantes).');
     }
+
+    await this.validateRegularizationPayment(params);
 
     const reference = randomUUID();
     const successUrl = `${this.frontendUrl}/dashboard/payment/success?ref=${reference}`;
@@ -104,6 +107,7 @@ export class JekoService {
         periodYear: params.periodYear,
         periodMonth: params.periodMonth,
         cashBoxId: params.cashBoxId,
+        regularizationAgreementId: params.regularizationAgreementId,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h TTL
       },
     });
@@ -123,10 +127,13 @@ export class JekoService {
     periodMonth?: number;
     cashBoxId?: string | null;
     title: string;
+    regularizationAgreementId?: string;
   }): Promise<{ reference: string; link: string }> {
     if (!this.isConfigured()) {
       throw new BadRequestException('Paiement en ligne non configuré (variables JEKO manquantes).');
     }
+
+    await this.validateRegularizationPayment(params);
 
     const reference = randomUUID();
     const res = await fetch(`${JEKO_BASE}/payment_links`, {
@@ -165,6 +172,7 @@ export class JekoService {
         periodYear: params.periodYear,
         periodMonth: params.periodMonth,
         cashBoxId: params.cashBoxId,
+        regularizationAgreementId: params.regularizationAgreementId,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       },
     });
@@ -283,7 +291,7 @@ export class JekoService {
 
   /** Logique commune d'enregistrement du paiement (partagée verify + webhook). */
   private async recordPaymentFromContext(
-    context: { memberId: string; contributionId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null; jekoLinkId: string | null },
+    context: { memberId: string; contributionId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null; jekoLinkId: string | null; regularizationAgreementId: string | null },
     reference: string,
   ): Promise<{ paid: boolean; payment: object }> {
     let cashBoxId = context.cashBoxId ?? null;
@@ -313,6 +321,39 @@ export class JekoService {
         reference,
       };
 
+      if (context.regularizationAgreementId) {
+        const agreement = await tx.regularizationAgreement.findUnique({ where: { id: context.regularizationAgreementId } });
+        if (!agreement || agreement.memberId !== context.memberId) throw new BadRequestException('Accord de régularisation introuvable.');
+        const paidBefore = Number(agreement.paidAmount);
+        const paidAfter = paidBefore + context.amountFcfa;
+        const agreedAmount = Number(agreement.agreedAmount);
+        const expectedAmount = paidBefore === 0 ? Number(agreement.initialAmount) : agreedAmount - paidBefore;
+        if (context.amountFcfa !== expectedAmount) throw new BadRequestException('Le montant de cette échéance a changé. Veuillez recommencer le paiement.');
+        if (paidAfter > agreedAmount) throw new BadRequestException('Le paiement dépasse le solde de la régularisation.');
+        const completed = paidAfter >= agreedAmount;
+        const payment = await tx.payment.create({
+          data: {
+            memberId: context.memberId,
+            contributionId: context.contributionId,
+            amount: context.amountFcfa,
+            cashBoxId,
+            regularizationAgreementId: agreement.id,
+            metadata: JSON.stringify({ ...metadataBase, regularization: true }),
+          },
+        });
+        await tx.regularizationAgreement.update({
+          where: { id: agreement.id },
+          data: {
+            paidAmount: new Prisma.Decimal(paidAfter),
+            status: completed ? RegularizationStatus.COMPLETED : RegularizationStatus.PARTIALLY_PAID,
+            activatedAt: agreement.activatedAt ?? new Date(),
+            completedAt: completed ? new Date() : null,
+          },
+        });
+        await tx.member.update({ where: { id: context.memberId }, data: { isSuspended: false, reactivatedAt: null } });
+        return { payment, paymentsCount: 1, reactivated: true };
+      }
+
       if (contribution?.type === ContributionType.MONTHLY && contribution.amount) {
         const member = await tx.member.findUnique({
           where: { id: context.memberId },
@@ -328,6 +369,13 @@ export class JekoService {
           select: { periodYear: true, periodMonth: true },
         });
         const paidSet = new Set(payments.map((p) => `${p.periodYear}-${p.periodMonth}`));
+        const completedAgreements = await tx.regularizationAgreement.findMany({
+          where: { memberId: context.memberId, contributionId: context.contributionId, status: RegularizationStatus.COMPLETED },
+          select: { months: true },
+        });
+        for (const agreement of completedAgreements) {
+          for (const period of agreement.months as Array<{ year: number; month: number }>) paidSet.add(`${period.year}-${period.month}`);
+        }
         const unpaidMonths: Array<{ year: number; month: number }> = [];
         const now = new Date();
         let year = now.getFullYear();
@@ -398,6 +446,22 @@ export class JekoService {
 
     this.logger.log(`[Jeko] ${result.paymentsCount} paiement(s) enregistré(s), réactivation=${result.reactivated}`);
     return { paid: result.paymentsCount > 0, payment: result.payment };
+  }
+
+  private async validateRegularizationPayment(params: { regularizationAgreementId?: string; memberId: string; contributionId: string; amountFcfa: number }) {
+    if (!params.regularizationAgreementId) return;
+    const agreement = await this.prisma.regularizationAgreement.findUnique({ where: { id: params.regularizationAgreementId } });
+    if (!agreement || agreement.memberId !== params.memberId || agreement.contributionId !== params.contributionId) {
+      throw new BadRequestException('Accord de régularisation invalide.');
+    }
+    if (agreement.status !== RegularizationStatus.PENDING && agreement.status !== RegularizationStatus.PARTIALLY_PAID && agreement.status !== RegularizationStatus.OVERDUE) {
+      throw new BadRequestException('Cet accord de régularisation n’est plus payable.');
+    }
+    const paid = Number(agreement.paidAmount);
+    const expected = paid === 0 ? Number(agreement.initialAmount) : Number(agreement.agreedAmount) - paid;
+    if (params.amountFcfa !== expected) {
+      throw new BadRequestException(`Le montant attendu pour cette échéance est de ${expected.toLocaleString('fr-FR')} FCFA.`);
+    }
   }
 
   /** Nettoyage des pending expirés (appelé par un scheduler). */
