@@ -90,11 +90,7 @@ export class AuthService {
       if (!member) {
         throw new UnauthorizedException('Téléphone ou mot de passe incorrect');
       }
-      if (member.isSuspended && member.role !== Role.ADMIN) {
-        throw new ForbiddenException(
-          "Compte suspendu pour non-paiement. Contactez l'administrateur.",
-        );
-      }
+      // Autoriser les membres suspendus à se connecter - le frontend les redirigera vers la page de paiement
       const payload: JwtPayload = { sub: member.id, phone: member.phone, role: member.role };
       const access_token = this.jwtService.sign(payload);
       return {
