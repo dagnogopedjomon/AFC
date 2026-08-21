@@ -239,6 +239,26 @@ export class ContributionsService {
       })
       .then((rows) => new Set(rows.map((r) => r.memberId)));
 
+    // Un accord par tranches payé et encore dans son délai maintient le membre actif.
+    const protectedMemberIds = await this.prisma.regularizationAgreement.findMany({
+      where: { status: 'PARTIALLY_PAID', deadline: { gte: new Date() } },
+      select: { memberId: true },
+    });
+    for (const row of protectedMemberIds) paidMemberIds.add(row.memberId);
+
+    // Un accord terminé solde explicitement les mois enregistrés dans l'accord,
+    // même si les encaissements ont été faits en une ou deux lignes comptables.
+    const completedAgreements = await this.prisma.regularizationAgreement.findMany({
+      where: { contributionId: monthly.id, status: 'COMPLETED' },
+      select: { memberId: true, months: true },
+    });
+    for (const agreement of completedAgreements) {
+      const coversPeriod = (agreement.months as Array<{ year: number; month: number }>).some(
+        (period) => period.year === periodYear && period.month === periodMonth,
+      );
+      if (coversPeriod) paidMemberIds.add(agreement.memberId);
+    }
+
     const members = await this.prisma.member.findMany({
       where: {
         id: { notIn: [...paidMemberIds] },
@@ -447,6 +467,13 @@ export class ContributionsService {
       select: { periodYear: true, periodMonth: true },
     });
     const paidSet = new Set(payments.map((p) => `${p.periodYear}-${p.periodMonth}`));
+    const completedAgreements = await this.prisma.regularizationAgreement.findMany({
+      where: { memberId, contributionId: monthly.id, status: 'COMPLETED' },
+      select: { months: true },
+    });
+    for (const agreement of completedAgreements) {
+      for (const period of agreement.months as Array<{ year: number; month: number }>) paidSet.add(`${period.year}-${period.month}`);
+    }
 
     const now = new Date();
     const joinDate = member.createdAt;
@@ -498,6 +525,13 @@ export class ContributionsService {
       select: { periodYear: true, periodMonth: true },
     });
     const paidSet = new Set(payments.map((p) => `${p.periodYear}-${p.periodMonth}`));
+    const completedAgreements = await this.prisma.regularizationAgreement.findMany({
+      where: { memberId, contributionId: monthly.id, status: 'COMPLETED' },
+      select: { months: true },
+    });
+    for (const agreement of completedAgreements) {
+      for (const period of agreement.months as Array<{ year: number; month: number }>) paidSet.add(`${period.year}-${period.month}`);
+    }
 
     const now = new Date();
     const joinDate = member.createdAt;
