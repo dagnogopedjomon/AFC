@@ -25,9 +25,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (!user) {
       throw new UnauthorizedException('Membre introuvable');
     }
-    if (user.isSuspended && user.role !== Role.ADMIN) {
-      throw new ForbiddenException('Compte suspendu. Contactez l’administrateur.');
-    }
+    // Autoriser les membres suspendus à s'authentifier - le frontend gère la redirection
     return { id: user.id, phone: user.phone, role: user.role };
   }
 }
