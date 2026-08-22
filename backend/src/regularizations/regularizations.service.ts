@@ -92,7 +92,7 @@ export class RegularizationsService {
     const result = [];
     for (const member of members) {
       const debt = await this.contributions.getMyDebtSummary(member.id);
-      if (debt.unpaidMonths.length >= 4) result.push({ ...member, debt });
+      if (debt.unpaidMonths.length > 0) result.push({ ...member, debt, eligibleForAgreement: debt.unpaidMonths.length >= 4 });
     }
     return result;
   }
