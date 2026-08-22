@@ -7,6 +7,8 @@ import { SelfPaymentDto } from './dto/self-payment.dto';
 import { JekoInitDto } from './dto/jeko-init.dto';
 import { JekoLinkDto } from './dto/jeko-link.dto';
 import { AllocateContributionDto } from './dto/allocate-contribution.dto';
+import { RecordAdvancePaymentDto } from './dto/record-advance-payment.dto';
+import { CancelPaymentDto } from './dto/cancel-payment.dto';
 import { JekoService } from './jeko.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ProfileCompletedGuard } from '../auth/profile-completed.guard';
@@ -128,6 +130,7 @@ export class ContributionsController {
       paymentMethod: dto.paymentMethod,
       payerPhone: dto.payerPhone,
       regularizationAgreementId: dto.regularizationAgreementId,
+      advanceMonths: dto.advanceMonths,
     });
   }
 
@@ -147,6 +150,7 @@ export class ContributionsController {
       periodMonth: dto.periodMonth,
       title: dto.title,
       regularizationAgreementId: dto.regularizationAgreementId,
+      advanceMonths: dto.advanceMonths,
     });
   }
 
@@ -174,6 +178,25 @@ export class ContributionsController {
   @Roles(Role.ADMIN, Role.TREASURER)
   recordPayment(@Body() dto: RecordPaymentDto) {
     return this.contributionsService.recordPayment(dto);
+  }
+
+  @Post('payments/advance/external')
+  @UseGuards(ProfileCompletedGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  recordExternalAdvance(@Body() dto: RecordAdvancePaymentDto, @Req() req: { user: RequestUser }) {
+    return this.contributionsService.recordExternalAdvancePayment(dto, req.user.id);
+  }
+
+  @Post('payments/:id/cancel')
+  @UseGuards(ProfileCompletedGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  cancelPayment(@Param('id') id: string, @Body() dto: CancelPaymentDto, @Req() req: { user: RequestUser }) {
+    return this.contributionsService.cancelPayment(id, dto.reason, req.user.id);
+  }
+
+  @Get('me/prepayment')
+  getMyPrepayment(@Req() req: { user: RequestUser }) {
+    return this.contributionsService.getPrepaymentStatus(req.user.id);
   }
 
   @Get('payments')

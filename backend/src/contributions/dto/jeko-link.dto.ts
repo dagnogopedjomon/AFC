@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsString, IsNumber, IsOptional, Min, IsInt, Max } from 'class-validator';
 
 export class JekoLinkDto {
   @IsString()
@@ -22,4 +22,10 @@ export class JekoLinkDto {
   @IsOptional()
   @IsString()
   regularizationAgreementId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  advanceMonths?: number;
 }

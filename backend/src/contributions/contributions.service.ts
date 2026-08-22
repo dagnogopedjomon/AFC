@@ -10,6 +10,7 @@ import { CreateContributionDto } from './dto/create-contribution.dto';
 import { UpdateContributionDto } from './dto/update-contribution.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { MembersService } from '../members/members.service';
+import { RecordAdvancePaymentDto } from './dto/record-advance-payment.dto';
 
 const DEADLINE_DAY = 10; // Échéance le 10 du mois
 
@@ -19,6 +20,24 @@ export class ContributionsService {
     private readonly prisma: PrismaService,
     private readonly membersService: MembersService,
   ) {}
+
+  private async getNextUnpaidPeriods(memberId: string, contributionId: string, count: number, tx: Prisma.TransactionClient | PrismaService = this.prisma) {
+    const existing = await tx.payment.findMany({
+      where: { memberId, contributionId, cancelledAt: null, periodYear: { not: null }, periodMonth: { not: null } },
+      select: { periodYear: true, periodMonth: true },
+    });
+    const paid = new Set(existing.map((row) => `${row.periodYear}-${row.periodMonth}`));
+    const periods: Array<{ year: number; month: number }> = [];
+    const cursor = new Date();
+    cursor.setDate(1);
+    for (let i = 0; periods.length < count && i < 36; i++) {
+      const year = cursor.getFullYear();
+      const month = cursor.getMonth() + 1;
+      if (!paid.has(`${year}-${month}`)) periods.push({ year, month });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return periods;
+  }
 
   async create(dto: CreateContributionDto) {
     const amount = dto.amount != null ? new Prisma.Decimal(dto.amount) : null;
@@ -142,6 +161,7 @@ export class ContributionsService {
           contributionId: dto.contributionId,
           periodYear: dto.periodYear,
           periodMonth: dto.periodMonth,
+          cancelledAt: null,
         },
       });
       if (existing) {
@@ -194,6 +214,64 @@ export class ContributionsService {
     return result;
   }
 
+  async recordExternalAdvancePayment(dto: RecordAdvancePaymentDto, performedById: string) {
+    const monthly = await this.findMonthlyContribution();
+    if (!monthly.amount) throw new BadRequestException('Montant mensuel non défini.');
+    const member = await this.prisma.member.findUnique({ where: { id: dto.memberId } });
+    if (!member) throw new NotFoundException('Membre introuvable.');
+    const monthlyAmount = Number(monthly.amount);
+    const expectedAmount = monthlyAmount * dto.months;
+    if (dto.amount !== expectedAmount) throw new BadRequestException(`Le montant attendu pour ${dto.months} mois est ${expectedAmount.toLocaleString('fr-FR')} FCFA.`);
+    const defaultBox = await this.prisma.cashBox.findFirst({ where: { isDefault: true }, select: { id: true } });
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const periods = await this.getNextUnpaidPeriods(dto.memberId, monthly.id, dto.months, tx);
+      if (periods.length !== dto.months) throw new BadRequestException('Impossible de déterminer toutes les périodes futures.');
+      const batchReference = dto.reference?.trim() || `EXT-${Date.now()}`;
+      const rows = periods.map((period) => ({
+        memberId: dto.memberId,
+        contributionId: monthly.id,
+        amount: monthly.amount!,
+        periodYear: period.year,
+        periodMonth: period.month,
+        cashBoxId: defaultBox?.id ?? null,
+        metadata: JSON.stringify({ source: 'external_admin', batchReference, paymentMethod: dto.paymentMethod?.trim() || null, note: dto.note?.trim() || null, advancePayment: true }),
+      }));
+      await tx.payment.createMany({ data: rows });
+      return { periods, batchReference, totalAmount: expectedAmount, paidThrough: periods.at(-1) };
+    });
+    await this.membersService.logAudit(dto.memberId, 'ADVANCE_PAYMENT_RECORDED', performedById, JSON.stringify(result));
+    return result;
+  }
+
+  async cancelPayment(paymentId: string, reason: string, performedById: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundException('Paiement introuvable.');
+    if (payment.cancelledAt) throw new BadRequestException('Ce paiement est déjà annulé.');
+    const updated = await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: { cancelledAt: new Date(), cancelledById: performedById, cancellationReason: reason.trim() },
+    });
+    await this.membersService.logAudit(payment.memberId, 'PAYMENT_CANCELLED', performedById, JSON.stringify({ paymentId, reason }));
+    return updated;
+  }
+
+  async getPrepaymentStatus(memberId: string) {
+    const monthly = await this.prisma.contribution.findFirst({ where: { type: ContributionType.MONTHLY } });
+    if (!monthly) return { paidThrough: null, futureMonthsPaid: 0, periods: [] };
+    const payments = await this.prisma.payment.findMany({
+      where: { memberId, contributionId: monthly.id, cancelledAt: null, periodYear: { not: null }, periodMonth: { not: null } },
+      select: { periodYear: true, periodMonth: true },
+    });
+    const now = new Date();
+    const currentKey = now.getFullYear() * 12 + now.getMonth();
+    const periods = payments
+      .filter((row) => row.periodYear! * 12 + row.periodMonth! - 1 >= currentKey)
+      .map((row) => ({ year: row.periodYear!, month: row.periodMonth! }))
+      .sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month));
+    return { paidThrough: periods.at(-1) ?? null, futureMonthsPaid: periods.length, periods };
+  }
+
   /** Alias utilisé par le scheduler de relance. */
   async findActiveMonthlyCotisation() {
     return this.prisma.contribution.findFirst({
@@ -232,6 +310,7 @@ export class ContributionsService {
       .findMany({
         where: {
           contributionId: monthly.id,
+          cancelledAt: null,
           periodYear,
           periodMonth,
         },
@@ -373,8 +452,9 @@ export class ContributionsService {
       return { totalCollected: 0, byMonth: [], monthlyContributionId: null };
     }
 
-    const where: { contributionId: string; periodYear?: number; periodMonth?: number } = {
+    const where: Prisma.PaymentWhereInput = {
       contributionId: monthly.id,
+      cancelledAt: null,
     };
     if (year != null) where.periodYear = year;
     if (month != null) where.periodMonth = month;
@@ -426,7 +506,7 @@ export class ContributionsService {
       where: { type: ContributionType.MONTHLY },
     });
     const monthlyPayments = monthly
-      ? payments.filter((p) => p.contributionId === monthly.id && p.periodYear != null && p.periodMonth != null)
+      ? payments.filter((p) => !p.cancelledAt && p.contributionId === monthly.id && p.periodYear != null && p.periodMonth != null)
       : [];
     const byMonth = monthlyPayments.map((p) => ({
       year: p.periodYear!,
@@ -435,7 +515,7 @@ export class ContributionsService {
       paidAt: p.paidAt,
     }));
 
-    const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const totalPaid = payments.filter((p) => !p.cancelledAt).reduce((sum, p) => sum + Number(p.amount), 0);
 
     return { member, payments, byMonth, totalPaid };
   }
@@ -461,6 +541,7 @@ export class ContributionsService {
       where: {
         memberId,
         contributionId: monthly.id,
+        cancelledAt: null,
         periodYear: { not: null },
         periodMonth: { not: null },
       },
@@ -519,6 +600,7 @@ export class ContributionsService {
       where: {
         memberId,
         contributionId: monthly.id,
+        cancelledAt: null,
         periodYear: { not: null },
         periodMonth: { not: null },
       },
