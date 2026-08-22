@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service';
-import { ExpenseStatus } from '@prisma/client';
+import { ExpenseStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class ReportsService {
@@ -14,7 +14,7 @@ export class ReportsService {
 
     const [payments, expenses] = await Promise.all([
       this.prisma.payment.findMany({
-        where: { paidAt: { gte: start, lte: end } },
+        where: { paidAt: { gte: start, lte: end }, cancelledAt: null },
         include: { member: { select: { firstName: true, lastName: true, phone: true } }, contribution: true },
         orderBy: { paidAt: 'asc' },
       }),
@@ -69,7 +69,7 @@ export class ReportsService {
 
   /** Toutes les transactions (paiements + dépenses approuvées) pour export. */
   async getTransactions(year?: number, month?: number) {
-    const wherePayment: { paidAt?: { gte: Date; lte: Date } } = {};
+    const wherePayment: Prisma.PaymentWhereInput = { cancelledAt: null };
     const whereExpense: { status: ExpenseStatus; expenseDate?: { gte: Date; lte: Date } } = {
       status: ExpenseStatus.APPROVED,
     };

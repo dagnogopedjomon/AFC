@@ -96,6 +96,7 @@ export class CaisseService {
   async getLivreDeCaisse(limit = 100) {
     const [payments, expenses, transfers] = await Promise.all([
       this.prisma.payment.findMany({
+        where: { cancelledAt: null },
         orderBy: { paidAt: 'desc' },
         take: limit * 2,
         include: {
@@ -230,8 +231,8 @@ export class CaisseService {
     const boxSummaries = await Promise.all(
       boxes.map(async (box) => {
         const paymentWhere = box.isDefault
-          ? { OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
-          : { cashBoxId: box.id };
+          ? { cancelledAt: null, OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+          : { cashBoxId: box.id, cancelledAt: null };
         const expenseWhere = {
           status: ExpenseStatus.APPROVED,
           ...(box.isDefault
@@ -279,7 +280,7 @@ export class CaisseService {
 
     // Résumé global (toutes caisses)
     const [totalPayments, totalExpenses] = await Promise.all([
-      this.prisma.payment.aggregate({ _sum: { amount: true } }),
+      this.prisma.payment.aggregate({ where: { cancelledAt: null }, _sum: { amount: true } }),
       this.prisma.expense.aggregate({
         where: { status: ExpenseStatus.APPROVED },
         _sum: { amount: true },
@@ -307,8 +308,8 @@ export class CaisseService {
 
     const isDefault = box.isDefault;
     const paymentWhere = isDefault
-      ? { OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
-      : { cashBoxId: box.id };
+      ? { cancelledAt: null, OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+      : { cashBoxId: box.id, cancelledAt: null };
     const expenseWhere = {
       status: ExpenseStatus.APPROVED,
       ...(isDefault

@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, Min, IsIn } from 'class-validator';
+import { IsString, IsNumber, IsOptional, Min, IsIn, IsInt, Max } from 'class-validator';
 
 export class JekoInitDto {
   @IsString()
@@ -27,4 +27,10 @@ export class JekoInitDto {
   @IsOptional()
   @IsString()
   regularizationAgreementId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  advanceMonths?: number;
 }

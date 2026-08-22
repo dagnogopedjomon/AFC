@@ -43,12 +43,14 @@ export class JekoService {
     paymentMethod: string;
     payerPhone?: string;
     regularizationAgreementId?: string;
+    advanceMonths?: number;
   }): Promise<{ reference: string; redirectUrl: string }> {
     if (!this.isConfigured()) {
       throw new BadRequestException('Paiement en ligne non configuré (variables JEKO manquantes).');
     }
 
     await this.validateRegularizationPayment(params);
+    await this.validateAdvancePayment(params);
 
     const reference = randomUUID();
     const successUrl = `${this.frontendUrl}/dashboard/payment/success?ref=${reference}`;
@@ -108,6 +110,7 @@ export class JekoService {
         periodMonth: params.periodMonth,
         cashBoxId: params.cashBoxId,
         regularizationAgreementId: params.regularizationAgreementId,
+        advanceMonths: params.advanceMonths,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h TTL
       },
     });
@@ -128,12 +131,14 @@ export class JekoService {
     cashBoxId?: string | null;
     title: string;
     regularizationAgreementId?: string;
+    advanceMonths?: number;
   }): Promise<{ reference: string; link: string }> {
     if (!this.isConfigured()) {
       throw new BadRequestException('Paiement en ligne non configuré (variables JEKO manquantes).');
     }
 
     await this.validateRegularizationPayment(params);
+    await this.validateAdvancePayment(params);
 
     const reference = randomUUID();
     const res = await fetch(`${JEKO_BASE}/payment_links`, {
@@ -173,6 +178,7 @@ export class JekoService {
         periodMonth: params.periodMonth,
         cashBoxId: params.cashBoxId,
         regularizationAgreementId: params.regularizationAgreementId,
+        advanceMonths: params.advanceMonths,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       },
     });
@@ -291,7 +297,7 @@ export class JekoService {
 
   /** Logique commune d'enregistrement du paiement (partagée verify + webhook). */
   private async recordPaymentFromContext(
-    context: { memberId: string; contributionId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null; jekoLinkId: string | null; regularizationAgreementId: string | null },
+    context: { memberId: string; contributionId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null; jekoLinkId: string | null; regularizationAgreementId: string | null; advanceMonths: number | null },
     reference: string,
   ): Promise<{ paid: boolean; payment: object }> {
     let cashBoxId = context.cashBoxId ?? null;
@@ -354,6 +360,36 @@ export class JekoService {
         return { payment, paymentsCount: 1, reactivated: true };
       }
 
+      if (context.advanceMonths && contribution?.type === ContributionType.MONTHLY && contribution.amount) {
+        const existing = await tx.payment.findMany({
+          where: { memberId: context.memberId, contributionId: context.contributionId, cancelledAt: null, periodYear: { not: null }, periodMonth: { not: null } },
+          select: { periodYear: true, periodMonth: true },
+        });
+        const paid = new Set(existing.map((row) => `${row.periodYear}-${row.periodMonth}`));
+        const periods: Array<{ year: number; month: number }> = [];
+        const cursor = new Date();
+        cursor.setDate(1);
+        for (let i = 0; periods.length < context.advanceMonths && i < 36; i++) {
+          const year = cursor.getFullYear();
+          const month = cursor.getMonth() + 1;
+          if (!paid.has(`${year}-${month}`)) periods.push({ year, month });
+          cursor.setMonth(cursor.getMonth() + 1);
+        }
+        if (periods.length !== context.advanceMonths) throw new BadRequestException('Impossible d’affecter tous les mois anticipés.');
+        const monthlyAmount = Number(contribution.amount);
+        if (context.amountFcfa !== monthlyAmount * periods.length) throw new BadRequestException('Le montant du paiement anticipé est invalide.');
+        await tx.payment.createMany({ data: periods.map((period) => ({
+          memberId: context.memberId,
+          contributionId: context.contributionId,
+          amount: contribution.amount!,
+          periodYear: period.year,
+          periodMonth: period.month,
+          cashBoxId,
+          metadata: JSON.stringify({ ...metadataBase, advancePayment: true }),
+        })) });
+        return { payment: { reference, advanceMonths: periods }, paymentsCount: periods.length, reactivated: false };
+      }
+
       if (contribution?.type === ContributionType.MONTHLY && contribution.amount) {
         const member = await tx.member.findUnique({
           where: { id: context.memberId },
@@ -363,6 +399,7 @@ export class JekoService {
           where: {
             memberId: context.memberId,
             contributionId: context.contributionId,
+            cancelledAt: null,
             periodYear: { not: null },
             periodMonth: { not: null },
           },
@@ -462,6 +499,15 @@ export class JekoService {
     if (params.amountFcfa !== expected) {
       throw new BadRequestException(`Le montant attendu pour cette échéance est de ${expected.toLocaleString('fr-FR')} FCFA.`);
     }
+  }
+
+  private async validateAdvancePayment(params: { advanceMonths?: number; memberId: string; contributionId: string; amountFcfa: number }) {
+    if (!params.advanceMonths) return;
+    if (params.advanceMonths < 1 || params.advanceMonths > 12) throw new BadRequestException('Durée de paiement anticipé invalide.');
+    const contribution = await this.prisma.contribution.findUnique({ where: { id: params.contributionId } });
+    if (!contribution || contribution.type !== ContributionType.MONTHLY || !contribution.amount) throw new BadRequestException('Cotisation mensuelle introuvable.');
+    const expected = Number(contribution.amount) * params.advanceMonths;
+    if (params.amountFcfa !== expected) throw new BadRequestException(`Le montant attendu est ${expected.toLocaleString('fr-FR')} FCFA.`);
   }
 
   /** Nettoyage des pending expirés (appelé par un scheduler). */

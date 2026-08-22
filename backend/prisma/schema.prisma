@@ -244,6 +244,9 @@ model Payment {
   periodMonth    Int?     // 1-12
 
   metadata       String?  // JSON optionnel (projet, libellé, etc.)
+  cancelledAt    DateTime?
+  cancelledById  String?
+  cancellationReason String?
 
   regularizationAgreementId String?
   regularizationAgreement RegularizationAgreement? @relation(fields: [regularizationAgreementId], references: [id], onDelete: SetNull)
@@ -252,6 +255,7 @@ model Payment {
   @@index([contributionId, paidAt])
   @@index([cashBoxId])
   @@index([regularizationAgreementId])
+  @@index([cancelledAt])
 }
 
 /// Accord nominatif permettant de régulariser plusieurs mois par tranche ou avec remise.
@@ -302,6 +306,7 @@ model PendingJekoPayment {
   periodYear     Int?
   periodMonth    Int?
   cashBoxId      String?
+  advanceMonths  Int?
   regularizationAgreementId String?
   regularizationAgreement RegularizationAgreement? @relation(fields: [regularizationAgreementId], references: [id], onDelete: Cascade)
   createdAt      DateTime @default(now())
