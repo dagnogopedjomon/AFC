@@ -70,7 +70,36 @@ export class ReportsService {
       const report = await this.getMonthlyReport(year, m);
       months.push(report);
     }
-    const totalEntries = months.reduce((sum, r) => sum + r.totalEntries, 0);
+    const yearStart = new Date(year, 0, 1);
+    const yearEnd = new Date(year, 11, 31, 23, 59, 59);
+    const paymentsReceivedDuringYear = await this.prisma.payment.findMany({
+      where: { paidAt: { gte: yearStart, lte: yearEnd }, cancelledAt: null },
+      select: { amount: true, periodYear: true, periodMonth: true },
+    });
+    const totalEntries = paymentsReceivedDuringYear.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const futureAllocationsMap = new Map<string, { year: number; month: number; totalEntries: number }>();
+    for (const payment of paymentsReceivedDuringYear) {
+      if (payment.periodYear == null || payment.periodMonth == null || payment.periodYear <= year) continue;
+      const key = `${payment.periodYear}-${payment.periodMonth}`;
+      const current = futureAllocationsMap.get(key) ?? {
+        year: payment.periodYear,
+        month: payment.periodMonth,
+        totalEntries: 0,
+      };
+      current.totalEntries += Number(payment.amount);
+      futureAllocationsMap.set(key, current);
+    }
+    const futureAllocations = [...futureAllocationsMap.values()]
+      .sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month))
+      .map((allocation) => ({
+        ...allocation,
+        label: new Date(allocation.year, allocation.month - 1).toLocaleString('fr-FR', {
+          month: 'long',
+          year: 'numeric',
+        }),
+      }));
+    const allocatedEntries = months.reduce((sum, r) => sum + r.totalEntries, 0)
+      + futureAllocations.reduce((sum, allocation) => sum + allocation.totalEntries, 0);
     const totalExits = months.reduce((sum, r) => sum + r.totalExits, 0);
     return {
       year,
@@ -83,6 +112,8 @@ export class ReportsService {
         totalExits: r.totalExits,
         solde: r.solde,
       })),
+      futureAllocations,
+      allocatedEntries,
       totalEntries,
       totalExits,
       solde: totalEntries - totalExits,
