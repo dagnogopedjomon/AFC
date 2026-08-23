@@ -238,9 +238,21 @@ export class ContributionsService {
         metadata: JSON.stringify({ source: 'external_admin', batchReference, paymentMethod: dto.paymentMethod?.trim() || null, note: dto.note?.trim() || null, advancePayment: true }),
       }));
       await tx.payment.createMany({ data: rows });
+      await tx.member.update({
+        where: { id: dto.memberId },
+        data: { isSuspended: false, reactivatedAt: null },
+      });
       return { periods, batchReference, totalAmount: expectedAmount, paidThrough: periods.at(-1) };
     });
     await this.membersService.logAudit(dto.memberId, 'ADVANCE_PAYMENT_RECORDED', performedById, JSON.stringify(result));
+    if (member.isSuspended) {
+      await this.membersService.logAudit(
+        dto.memberId,
+        'REACTIVATED',
+        performedById,
+        'Réactivation automatique après paiement anticipé hors application',
+      );
+    }
     return result;
   }
 

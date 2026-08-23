@@ -387,7 +387,11 @@ export class JekoService {
           cashBoxId,
           metadata: JSON.stringify({ ...metadataBase, advancePayment: true }),
         })) });
-        return { payment: { reference, advanceMonths: periods }, paymentsCount: periods.length, reactivated: false };
+        await tx.member.update({
+          where: { id: context.memberId },
+          data: { isSuspended: false, reactivatedAt: null },
+        });
+        return { payment: { reference, advanceMonths: periods }, paymentsCount: periods.length, reactivated: true };
       }
 
       if (contribution?.type === ContributionType.MONTHLY && contribution.amount) {
