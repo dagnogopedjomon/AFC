@@ -42,12 +42,20 @@ export class ReportsService {
     ]);
 
     const totalEntries = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const advanceEntries = payments.reduce((sum, payment) => {
+      if (payment.periodYear == null || payment.periodMonth == null) return sum;
+      const paidAt = new Date(payment.paidAt);
+      const paidInCoveredMonth =
+        paidAt.getFullYear() === payment.periodYear && paidAt.getMonth() + 1 === payment.periodMonth;
+      return paidInCoveredMonth ? sum : sum + Number(payment.amount);
+    }, 0);
     const totalExits = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
     const solde = totalEntries - totalExits;
 
     return {
       period: { year, month, label: start.toLocaleString('fr-FR', { month: 'long', year: 'numeric' }) },
       totalEntries,
+      advanceEntries,
       totalExits,
       solde,
       payments,
@@ -71,6 +79,7 @@ export class ReportsService {
         month: r.period.month,
         label: r.period.label,
         totalEntries: r.totalEntries,
+        advanceEntries: r.advanceEntries,
         totalExits: r.totalExits,
         solde: r.solde,
       })),
