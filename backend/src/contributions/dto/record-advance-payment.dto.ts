@@ -9,6 +9,12 @@ export class RecordAdvancePaymentDto {
   @Max(12)
   months: number;
 
+  @IsOptional()
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  calendarYear?: number;
+
   @IsNumber()
   @Min(1)
   amount: number;
