@@ -204,6 +204,7 @@ export class ReportsService {
           : 'Toutes périodes';
       const totalEntries = rows.filter((row) => row.type === 'ENTREE').reduce((sum, row) => sum + row.amount, 0);
       const totalExits = rows.filter((row) => row.type === 'SORTIE').reduce((sum, row) => sum + row.amount, 0);
+      const formatAmount = (value: number) => value.toLocaleString('fr-FR').replace(/[\s\u202f\u00a0]/g, '.');
       const columns = [
         { label: 'TYPE', x: 42, width: 65 },
         { label: 'DATE', x: 107, width: 78 },
@@ -225,7 +226,7 @@ export class ReportsService {
         cards.forEach(([label, value, color], index) => {
           const x = 62 + index * 230;
           doc.fillColor('#64748b').font('Helvetica-Bold').fontSize(8).text(label, x, 105);
-          doc.fillColor(color).fontSize(15).text(`${value.toLocaleString('fr-FR')} FCFA`, x, 121);
+          doc.fillColor(color).fontSize(15).text(`${formatAmount(value)} FCFA`, x, 121);
         });
         doc.rect(42, 168, 718, 28).fill('#e0f2fe');
         columns.forEach((column) => doc.fillColor('#075985').font('Helvetica-Bold').fontSize(8).text(column.label, column.x + 6, 178, { width: column.width - 12 }));
@@ -244,7 +245,7 @@ export class ReportsService {
         doc.fillColor('#334155').font('Helvetica').text(row.date, 113, y + 9, { width: 66 });
         doc.text(row.description.substring(0, 55), 191, y + 9, { width: 233, ellipsis: true });
         doc.text(row.member.substring(0, 32), 436, y + 9, { width: 168, ellipsis: true });
-        doc.font('Helvetica-Bold').text(row.amount.toLocaleString('fr-FR'), 616, y + 9, { width: 136, align: 'right' });
+        doc.font('Helvetica-Bold').text(formatAmount(row.amount), 616, y + 9, { width: 136, align: 'right' });
         doc.moveTo(42, y + 28).lineTo(760, y + 28).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
         y += 28;
       }
