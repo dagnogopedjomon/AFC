@@ -14,7 +14,20 @@ export class ReportsService {
 
     const [payments, expenses] = await Promise.all([
       this.prisma.payment.findMany({
-        where: { paidAt: { gte: start, lte: end }, cancelledAt: null },
+        where: {
+          cancelledAt: null,
+          OR: [
+            // Les cotisations mensuelles anticipées sont affectées au mois couvert,
+            // même si l'argent a été encaissé en une seule fois plusieurs mois avant.
+            { periodYear: year, periodMonth: month },
+            // Les autres paiements restent comptabilisés à leur date d'encaissement.
+            {
+              periodYear: null,
+              periodMonth: null,
+              paidAt: { gte: start, lte: end },
+            },
+          ],
+        },
         include: { member: { select: { firstName: true, lastName: true, phone: true } }, contribution: true },
         orderBy: { paidAt: 'asc' },
       }),
