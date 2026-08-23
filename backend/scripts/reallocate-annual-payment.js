@@ -52,8 +52,8 @@ if (!memberId || !Number.isInteger(calendarYear)) {
 
     for (let index = 0; index < ids.length; index++) {
       await client.query(
-        `UPDATE "Payment" SET "periodYear" = $1, "periodMonth" = $2,
-          metadata = (metadata::jsonb || jsonb_build_object('calendarYear', $1, 'reallocatedAnnualPayment', true))::text
+        `UPDATE "Payment" SET "periodYear" = $1::int, "periodMonth" = $2::int,
+          metadata = (metadata::jsonb || jsonb_build_object('calendarYear', $1::int, 'reallocatedAnnualPayment', true))::text
          WHERE id = $3`,
         [calendarYear, index + 1, ids[index]],
       );
