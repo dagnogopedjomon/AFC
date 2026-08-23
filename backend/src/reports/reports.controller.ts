@@ -83,4 +83,20 @@ export class ReportsController {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
   }
+
+  @Get('export/xlsx')
+  async exportExcel(
+    @Res() res: Response,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    const buffer = await this.reportsService.getTransactionsExcelBuffer(
+      year ? parseInt(year, 10) : undefined,
+      month ? parseInt(month, 10) : undefined,
+    );
+    const filename = `rapport-transactions${year ? `-${year}` : ''}${month ? `-${month}` : ''}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }
 }
