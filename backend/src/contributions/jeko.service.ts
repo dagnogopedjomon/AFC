@@ -367,13 +367,23 @@ export class JekoService {
         });
         const paid = new Set(existing.map((row) => `${row.periodYear}-${row.periodMonth}`));
         const periods: Array<{ year: number; month: number }> = [];
-        const cursor = new Date();
-        cursor.setDate(1);
-        for (let i = 0; periods.length < context.advanceMonths && i < 36; i++) {
-          const year = cursor.getFullYear();
-          const month = cursor.getMonth() + 1;
-          if (!paid.has(`${year}-${month}`)) periods.push({ year, month });
-          cursor.setMonth(cursor.getMonth() + 1);
+        if (context.advanceMonths === 12) {
+          const calendarYear = context.periodYear ?? new Date().getFullYear();
+          for (let month = 1; month <= 12; month++) {
+            if (paid.has(`${calendarYear}-${month}`)) {
+              throw new BadRequestException(`Un paiement existe déjà pour l’année ${calendarYear}.`);
+            }
+            periods.push({ year: calendarYear, month });
+          }
+        } else {
+          const cursor = new Date();
+          cursor.setDate(1);
+          for (let i = 0; periods.length < context.advanceMonths && i < 36; i++) {
+            const year = cursor.getFullYear();
+            const month = cursor.getMonth() + 1;
+            if (!paid.has(`${year}-${month}`)) periods.push({ year, month });
+            cursor.setMonth(cursor.getMonth() + 1);
+          }
         }
         if (periods.length !== context.advanceMonths) throw new BadRequestException('Impossible d’affecter tous les mois anticipés.');
         const monthlyAmount = Number(contribution.amount);
