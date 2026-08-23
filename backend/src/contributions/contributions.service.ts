@@ -415,7 +415,19 @@ export class ContributionsService {
       },
       select: { id: true },
     });
-    const ids = toResuspend.map((m) => m.id);
+    const periodYear = deadline.getFullYear();
+    const periodMonth = deadline.getMonth() + 1;
+    const { members: membersInArrears } = await this.getMembersInArrears(periodYear, periodMonth);
+    const arrearsIds = new Set(membersInArrears.map((member) => member.id));
+    const ids = toResuspend.map((m) => m.id).filter((id) => arrearsIds.has(id));
+    const paidIds = toResuspend.map((m) => m.id).filter((id) => !arrearsIds.has(id));
+
+    if (paidIds.length > 0) {
+      await this.prisma.member.updateMany({
+        where: { id: { in: paidIds } },
+        data: { reactivatedAt: null },
+      });
+    }
     if (ids.length === 0) return { applied: 0 };
 
     await this.prisma.member.updateMany({
