@@ -225,23 +225,7 @@ export class ContributionsService {
     const defaultBox = await this.prisma.cashBox.findFirst({ where: { isDefault: true }, select: { id: true } });
 
     const result = await this.prisma.$transaction(async (tx) => {
-      let periods: Array<{ year: number; month: number }>;
-      if (dto.months === 12) {
-        const calendarYear = dto.calendarYear ?? new Date().getFullYear();
-        periods = Array.from({ length: 12 }, (_, index) => ({ year: calendarYear, month: index + 1 }));
-        const existing = await tx.payment.findFirst({
-          where: {
-            memberId: dto.memberId,
-            contributionId: monthly.id,
-            cancelledAt: null,
-            periodYear: calendarYear,
-            periodMonth: { in: periods.map((period) => period.month) },
-          },
-        });
-        if (existing) throw new BadRequestException(`Un paiement existe déjà pour l’année ${calendarYear}.`);
-      } else {
-        periods = await this.getNextUnpaidPeriods(dto.memberId, monthly.id, dto.months, tx);
-      }
+      const periods = await this.getNextUnpaidPeriods(dto.memberId, monthly.id, dto.months, tx);
       if (periods.length !== dto.months) throw new BadRequestException('Impossible de déterminer toutes les périodes futures.');
       const batchReference = dto.reference?.trim() || `EXT-${Date.now()}`;
       const rows = periods.map((period) => ({
