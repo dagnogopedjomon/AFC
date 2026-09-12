@@ -81,6 +81,12 @@ enum RegularizationStatus {
   CANCELLED
 }
 
+enum FineStatus {
+  UNPAID
+  PAID
+  CANCELLED
+}
+
 // ========== Module 1 : Membres ==========
 
 model Member {
@@ -130,6 +136,10 @@ model Member {
   allocationsPerformed  ContributionAllocation[]
   regularizations       RegularizationAgreement[] @relation("RegularizationMember")
   regularizationsCreated RegularizationAgreement[] @relation("RegularizationCreator")
+  fines             Fine[] @relation("FineMember")
+  finesCreated      Fine[] @relation("FineCreator")
+  contributionExemptions ContributionExemption[] @relation("ExemptedMember")
+  exemptionsCreated ContributionExemption[] @relation("ExemptionCreator")
 }
 
 /// Historique des actions sur un membre (invitation, mise à jour, suspension, etc.)
@@ -335,6 +345,7 @@ model CashBox {
   allocationsFrom ContributionAllocation[]
   transfersFrom CashBoxTransfer[] @relation("TransferFrom")
   transfersTo   CashBoxTransfer[] @relation("TransferTo")
+  fines         Fine[]
 
   @@index([order])
 }
@@ -382,6 +393,9 @@ model Expense {
   description String
   expenseDate DateTime // Date de la dépense
   beneficiary String?  // Décaissement pour qui/quoi (personne, activité, collecte) — transparence
+  note        String?   @db.Text
+  categoryId  String?
+  category    ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   status      ExpenseStatus @default(PENDING_TREASURER)
 
@@ -399,6 +413,53 @@ model Expense {
   rejectReason             String?  @db.Text // Motif du rejet (trésorier ou commissaire)
 
   @@index([cashBoxId])
+  @@index([categoryId])
+}
+
+model ExpenseCategory {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  expenses  Expense[]
+}
+
+model Fine {
+  id          String     @id @default(cuid())
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  memberId    String
+  member      Member     @relation("FineMember", fields: [memberId], references: [id], onDelete: Restrict)
+  createdById String
+  createdBy   Member     @relation("FineCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  reason      String
+  amount      Decimal    @db.Decimal(12, 2)
+  status      FineStatus @default(UNPAID)
+  paidAt      DateTime?
+  cancelledAt DateTime?
+  note        String?    @db.Text
+  cashBoxId   String?
+  cashBox     CashBox?   @relation(fields: [cashBoxId], references: [id], onDelete: SetNull)
+
+  @@index([memberId, status])
+  @@index([createdAt])
+  @@index([cashBoxId])
+}
+
+model ContributionExemption {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  memberId    String
+  member      Member   @relation("ExemptedMember", fields: [memberId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   Member   @relation("ExemptionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  periodYear  Int
+  periodMonth Int
+  reason      String?
+
+  @@unique([memberId, periodYear, periodMonth])
+  @@index([periodYear, periodMonth])
 }
 
 

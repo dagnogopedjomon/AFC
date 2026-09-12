@@ -1,7 +1,7 @@
 import { IsNotEmpty, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
-  @IsNotEmpty({ message: 'Le numéro de téléphone est requis' })
+  @IsNotEmpty({ message: 'L’identifiant est requis' })
   @IsString()
   phone: string;
 

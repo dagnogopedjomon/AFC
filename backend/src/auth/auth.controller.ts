@@ -5,6 +5,7 @@ import { LoginDto } from './dto/login.dto';
 import { SendActivationOtpDto } from './dto/send-activation-otp.dto';
 import { VerifyActivationOtpDto } from './dto/verify-activation-otp.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { Public } from './public.decorator';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
@@ -50,5 +51,11 @@ export class AuthController {
   @Get('me')
   async me(@CurrentUser() user: RequestUser) {
     return this.authService.findById(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  changePassword(@CurrentUser() user: RequestUser, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
   }
 }

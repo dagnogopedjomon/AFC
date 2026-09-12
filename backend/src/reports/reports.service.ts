@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { PrismaService } from '../prisma/prisma.service';
-import { ExpenseStatus, Prisma } from '@prisma/client';
+import { ExpenseStatus, FineStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class ReportsService {
@@ -13,7 +13,7 @@ export class ReportsService {
     const start = new Date(year, month - 1, 1);
     const end = new Date(year, month, 0, 23, 59, 59);
 
-    const [payments, expenses] = await Promise.all([
+    const [payments, fines, expenses] = await Promise.all([
       this.prisma.payment.findMany({
         where: {
           cancelledAt: null,
@@ -32,6 +32,11 @@ export class ReportsService {
         include: { member: { select: { firstName: true, lastName: true, phone: true } }, contribution: true },
         orderBy: { paidAt: 'asc' },
       }),
+      this.prisma.fine.findMany({
+        where: { status: FineStatus.PAID, paidAt: { gte: start, lte: end } },
+        include: { member: { select: { firstName: true, lastName: true, phone: true } } },
+        orderBy: { paidAt: 'asc' },
+      }),
       this.prisma.expense.findMany({
         where: {
           status: ExpenseStatus.APPROVED,
@@ -42,7 +47,8 @@ export class ReportsService {
       }),
     ]);
 
-    const totalEntries = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const totalEntries = payments.reduce((sum, p) => sum + Number(p.amount), 0)
+      + fines.reduce((sum, fine) => sum + Number(fine.amount), 0);
     const advanceEntries = payments.reduce((sum, payment) => {
       if (payment.periodYear == null || payment.periodMonth == null) return sum;
       const paidAt = new Date(payment.paidAt);
@@ -60,6 +66,7 @@ export class ReportsService {
       totalExits,
       solde,
       payments,
+      fines,
       expenses,
     };
   }
@@ -77,7 +84,11 @@ export class ReportsService {
       where: { paidAt: { gte: yearStart, lte: yearEnd }, cancelledAt: null },
       select: { amount: true, periodYear: true, periodMonth: true },
     });
-    const totalEntries = paymentsReceivedDuringYear.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const finesReceivedDuringYear = await this.prisma.fine.aggregate({
+      where: { status: FineStatus.PAID, paidAt: { gte: yearStart, lte: yearEnd } }, _sum: { amount: true },
+    });
+    const totalEntries = paymentsReceivedDuringYear.reduce((sum, payment) => sum + Number(payment.amount), 0)
+      + Number(finesReceivedDuringYear._sum.amount ?? 0);
     const futureAllocationsMap = new Map<string, { year: number; month: number; totalEntries: number }>();
     for (const payment of paymentsReceivedDuringYear) {
       if (payment.periodYear == null || payment.periodMonth == null || payment.periodYear <= year) continue;
@@ -137,12 +148,19 @@ export class ReportsService {
       whereExpense.expenseDate = { gte: start, lte: end };
     }
 
-    const [payments, expenses] = await Promise.all([
+    const fineWhere: Prisma.FineWhereInput = { status: FineStatus.PAID };
+    if (year != null) {
+      const start = month != null ? new Date(year, month - 1, 1) : new Date(year, 0, 1);
+      const end = month != null ? new Date(year, month, 0, 23, 59, 59) : new Date(year, 11, 31, 23, 59, 59);
+      fineWhere.paidAt = { gte: start, lte: end };
+    }
+    const [payments, fines, expenses] = await Promise.all([
       this.prisma.payment.findMany({
         where: wherePayment,
         include: { member: { select: { firstName: true, lastName: true, phone: true } }, contribution: true },
         orderBy: { paidAt: 'asc' },
       }),
+      this.prisma.fine.findMany({ where: fineWhere, include: { member: true }, orderBy: { paidAt: 'asc' } }),
       this.prisma.expense.findMany({
         where: whereExpense,
         include: { requestedBy: { select: { firstName: true, lastName: true } } },
@@ -151,13 +169,19 @@ export class ReportsService {
     ]);
 
     return {
-      payments: payments.map((p) => ({
+      payments: [
+        ...payments.map((p) => ({
         type: 'ENTREE',
         date: p.paidAt,
         description: `Cotisation - ${p.contribution.name}`,
         member: `${p.member.firstName} ${p.member.lastName}`,
         amount: Number(p.amount),
-      })),
+        })),
+        ...fines.map((fine) => ({
+          type: 'ENTREE', date: fine.paidAt!, description: `Amende - ${fine.reason}`,
+          member: `${fine.member.firstName} ${fine.member.lastName}`, amount: Number(fine.amount),
+        })),
+      ],
       expenses: expenses.map((e) => ({
         type: 'SORTIE',
         date: e.expenseDate,

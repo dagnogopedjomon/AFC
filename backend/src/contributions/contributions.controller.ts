@@ -106,6 +106,15 @@ export class ContributionsController {
     return this.contributionsService.getMembersInArrears(periodYear, periodMonth);
   }
 
+  @Get('annual-matrix')
+  @UseGuards(ProfileCompletedGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.TREASURER, Role.COMMISSIONER)
+  getAnnualMatrix(@Query('year') year?: string) {
+    return this.contributionsService.getAnnualMatrix(
+      year ? parseInt(year, 10) : new Date().getFullYear(),
+    );
+  }
+
   @Post('apply-suspensions')
   @UseGuards(ProfileCompletedGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.TREASURER)

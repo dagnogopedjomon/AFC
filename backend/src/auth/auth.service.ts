@@ -58,6 +58,16 @@ async function findMemberByPhone(prisma: PrismaService, phone: string) {
   });
 }
 
+async function findMemberByIdentifier(prisma: PrismaService, identifier: string) {
+  const normalized = identifier.trim();
+  if (normalized.includes('@')) {
+    return prisma.member.findFirst({
+      where: { email: { equals: normalized, mode: 'insensitive' } },
+    });
+  }
+  return findMemberByPhone(prisma, normalized);
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -68,11 +78,11 @@ export class AuthService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  async validateUser(phone: string, password: string) {
-    const member = await findMemberByPhone(this.prisma, phone);
-    const candidates = phoneLookupCandidates(phone).join(',');
+  async validateUser(identifier: string, password: string) {
+    const member = await findMemberByIdentifier(this.prisma, identifier);
+    const candidates = identifier.includes('@') ? identifier.trim() : phoneLookupCandidates(identifier).join(',');
 
-    this.logger.log(`[Auth] login phone=${phone.trim()} candidates=[${candidates}] found=${!!member} hasPassword=${!!member?.passwordHash}`);
+    this.logger.log(`[Auth] login identifier=${identifier.trim()} candidates=[${candidates}] found=${!!member} hasPassword=${!!member?.passwordHash}`);
 
     if (!member || !member.passwordHash) return null;
     try {
@@ -88,7 +98,7 @@ export class AuthService {
     try {
       const member = await this.validateUser(phone, password);
       if (!member) {
-        throw new UnauthorizedException('Téléphone ou mot de passe incorrect');
+        throw new UnauthorizedException('Identifiant ou mot de passe incorrect');
       }
       // Autoriser les membres suspendus à se connecter - le frontend les redirigera vers la page de paiement
       const payload: JwtPayload = { sub: member.id, phone: member.phone, role: member.role };
@@ -231,5 +241,20 @@ export class AuthService {
       data: { passwordHash, otpCode: null, otpExpiresAt: null },
     });
     return { ok: true, message: 'Mot de passe créé. Vous pouvez vous connecter.' };
+  }
+
+  async changePassword(memberId: string, currentPassword: string, newPassword: string) {
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('Le nouveau mot de passe doit être différent.');
+    }
+    const member = await this.prisma.member.findUnique({ where: { id: memberId } });
+    if (!member?.passwordHash || !(await bcrypt.compare(currentPassword, member.passwordHash))) {
+      throw new UnauthorizedException('Le mot de passe actuel est incorrect.');
+    }
+    await this.prisma.member.update({
+      where: { id: memberId },
+      data: { passwordHash: await bcrypt.hash(newPassword, SALT_ROUNDS) },
+    });
+    return { ok: true, message: 'Mot de passe mis à jour.' };
   }
 }

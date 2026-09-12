@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ExpenseStatus, Role, CashBoxTransferType } from '@prisma/client';
+import { ExpenseStatus, FineStatus, Role, CashBoxTransferType } from '@prisma/client';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { CreateCashBoxDto } from './dto/create-cash-box.dto';
 import { UpdateCashBoxDto } from './dto/update-cash-box.dto';
@@ -94,7 +94,7 @@ export class CaisseService {
    * trié par date décroissante. Visible par tous les membres (transparence).
    */
   async getLivreDeCaisse(limit = 100) {
-    const [payments, expenses, transfers] = await Promise.all([
+    const [payments, fines, expenses, transfers] = await Promise.all([
       this.prisma.payment.findMany({
         where: { cancelledAt: null },
         orderBy: { paidAt: 'desc' },
@@ -104,6 +104,10 @@ export class CaisseService {
           contribution: { select: { id: true, name: true } },
           cashBox: { select: { id: true, name: true } },
         },
+      }),
+      this.prisma.fine.findMany({
+        where: { status: FineStatus.PAID }, orderBy: { paidAt: 'desc' }, take: limit * 2,
+        include: { member: { select: { id: true, firstName: true, lastName: true } }, cashBox: { select: { id: true, name: true } } },
       }),
       this.prisma.expense.findMany({
         where: { status: ExpenseStatus.APPROVED },
@@ -132,12 +136,14 @@ export class CaisseService {
 
     type LivreRow =
       | { type: 'entree'; kind: 'payment'; date: Date; payment: (typeof payments)[0]; expense?: never; transfer?: never }
+      | { type: 'entree'; kind: 'fine'; date: Date; fine: (typeof fines)[0]; payment?: never; expense?: never; transfer?: never }
       | { type: 'entree'; kind: 'allocation'; date: Date; transfer: (typeof transfers)[0]; payment?: never; expense?: never }
       | { type: 'sortie'; kind: 'expense'; date: Date; expense: (typeof expenses)[0]; payment?: never; transfer?: never }
       | { type: 'sortie'; kind: 'withdrawal'; date: Date; transfer: (typeof transfers)[0]; payment?: never; expense?: never };
 
     const rows: LivreRow[] = [
       ...payments.map((p) => ({ type: 'entree' as const, kind: 'payment' as const, date: p.paidAt, payment: p })),
+      ...fines.map((fine) => ({ type: 'entree' as const, kind: 'fine' as const, date: fine.paidAt ?? fine.createdAt, fine })),
       ...expenses.map((e) => ({
         type: 'sortie' as const,
         kind: 'expense' as const,
@@ -177,6 +183,12 @@ export class CaisseService {
           member: e.payment.member,
           periodYear: e.payment.periodYear,
           periodMonth: e.payment.periodMonth,
+        };
+      if (e.kind === 'fine')
+        return {
+          ...base, kind: 'fine', id: e.fine.id, amount: Number(e.fine.amount),
+          label: `Amende · ${e.fine.member.firstName} ${e.fine.member.lastName}`,
+          description: e.fine.reason, cashBox: e.fine.cashBox?.name ?? null, member: e.fine.member,
         };
       if (e.kind === 'allocation')
         return {
@@ -248,8 +260,12 @@ export class CaisseService {
           ? { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.WITHDRAWAL, OR: [{ toCashBoxId: box.id }, { toCashBoxId: null }] }
           : { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.WITHDRAWAL, toCashBoxId: box.id };
 
-        const [paymentsSum, expensesSum, allocIn, withdrawOut, allocOut, withdrawIn] = await Promise.all([
+        const fineWhere = box.isDefault
+          ? { status: FineStatus.PAID, OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+          : { status: FineStatus.PAID, cashBoxId: box.id };
+        const [paymentsSum, finesSum, expensesSum, allocIn, withdrawOut, allocOut, withdrawIn] = await Promise.all([
           this.prisma.payment.aggregate({ where: paymentWhere, _sum: { amount: true } }),
+          this.prisma.fine.aggregate({ where: fineWhere, _sum: { amount: true } }),
           this.prisma.expense.aggregate({ where: expenseWhere, _sum: { amount: true } }),
           this.prisma.cashBoxTransfer.aggregate({ where: allocationEntriesWhere, _sum: { amount: true } }),
           this.prisma.cashBoxTransfer.aggregate({ where: withdrawalExitsWhere, _sum: { amount: true } }),
@@ -258,6 +274,7 @@ export class CaisseService {
         ]);
         const entries =
           Number(paymentsSum._sum.amount ?? 0) +
+          Number(finesSum._sum.amount ?? 0) +
           Number(allocIn._sum.amount ?? 0) +
           Number(withdrawIn._sum.amount ?? 0);
         const exits =
@@ -279,14 +296,15 @@ export class CaisseService {
     );
 
     // Résumé global (toutes caisses)
-    const [totalPayments, totalExpenses] = await Promise.all([
+    const [totalPayments, totalFines, totalExpenses] = await Promise.all([
       this.prisma.payment.aggregate({ where: { cancelledAt: null }, _sum: { amount: true } }),
+      this.prisma.fine.aggregate({ where: { status: FineStatus.PAID }, _sum: { amount: true } }),
       this.prisma.expense.aggregate({
         where: { status: ExpenseStatus.APPROVED },
         _sum: { amount: true },
       }),
     ]);
-    const entries = Number(totalPayments._sum.amount ?? 0);
+    const entries = Number(totalPayments._sum.amount ?? 0) + Number(totalFines._sum.amount ?? 0);
     const exits = Number(totalExpenses._sum.amount ?? 0);
 
     return {
@@ -326,8 +344,12 @@ export class CaisseService {
       ? { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.WITHDRAWAL, OR: [{ toCashBoxId: box.id }, { toCashBoxId: null }] }
       : { status: ExpenseStatus.APPROVED, type: CashBoxTransferType.WITHDRAWAL, toCashBoxId: box.id };
 
-    const [paymentsSum, expensesSum, allocIn, withdrawOut, allocOut, withdrawIn] = await Promise.all([
+    const fineWhere = isDefault
+      ? { status: FineStatus.PAID, OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+      : { status: FineStatus.PAID, cashBoxId: box.id };
+    const [paymentsSum, finesSum, expensesSum, allocIn, withdrawOut, allocOut, withdrawIn] = await Promise.all([
       this.prisma.payment.aggregate({ where: paymentWhere, _sum: { amount: true } }),
+      this.prisma.fine.aggregate({ where: fineWhere, _sum: { amount: true } }),
       this.prisma.expense.aggregate({ where: expenseWhere, _sum: { amount: true } }),
       this.prisma.cashBoxTransfer.aggregate({ where: allocationEntriesWhere, _sum: { amount: true } }),
       this.prisma.cashBoxTransfer.aggregate({ where: withdrawalExitsWhere, _sum: { amount: true } }),
@@ -337,6 +359,7 @@ export class CaisseService {
 
     const entries =
       Number(paymentsSum._sum.amount ?? 0) +
+      Number(finesSum._sum.amount ?? 0) +
       Number(allocIn._sum.amount ?? 0) +
       Number(withdrawIn._sum.amount ?? 0);
     const exits =
@@ -361,12 +384,15 @@ export class CaisseService {
         description: dto.description.trim(),
         expenseDate: new Date(dto.expenseDate),
         beneficiary: dto.beneficiary?.trim() || null,
+        categoryId: dto.categoryId || null,
+        note: dto.note?.trim() || null,
         status: ExpenseStatus.PENDING_TREASURER,
         cashBoxId,
         requestedById,
       },
       include: {
         cashBox: { select: { id: true, name: true } },
+        category: true,
         requestedBy: {
           select: { id: true, firstName: true, lastName: true },
         },
@@ -382,6 +408,7 @@ export class CaisseService {
       orderBy: { createdAt: 'desc' },
       include: {
         cashBox: { select: { id: true, name: true } },
+        category: true,
         requestedBy: { select: { id: true, firstName: true, lastName: true } },
         treasurerApprovedBy: { select: { id: true, firstName: true, lastName: true } },
         commissionerApprovedBy: { select: { id: true, firstName: true, lastName: true } },
@@ -394,6 +421,7 @@ export class CaisseService {
       where: { id },
       include: {
         cashBox: { select: { id: true, name: true } },
+        category: true,
         requestedBy: { select: { id: true, firstName: true, lastName: true, phone: true } },
         treasurerApprovedBy: { select: { id: true, firstName: true, lastName: true } },
         commissionerApprovedBy: { select: { id: true, firstName: true, lastName: true } },

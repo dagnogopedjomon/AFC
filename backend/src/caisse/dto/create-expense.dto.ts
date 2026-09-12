@@ -22,4 +22,12 @@ export class CreateExpenseDto {
   @IsOptional()
   @IsString()
   beneficiary?: string;
+
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

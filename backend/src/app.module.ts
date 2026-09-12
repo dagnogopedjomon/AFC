@@ -18,6 +18,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { RegularizationsModule } from './regularizations/regularizations.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { AdministrationModule } from './administration/administration.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     SupabaseModule,
     WebhooksModule,
     RegularizationsModule,
+    AdministrationModule,
   ],
   controllers: [AppController],
   providers: [

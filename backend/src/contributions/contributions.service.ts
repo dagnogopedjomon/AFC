@@ -284,6 +284,77 @@ export class ContributionsService {
     return { paidThrough: periods.at(-1) ?? null, futureMonthsPaid: periods.length, periods };
   }
 
+  /** Vue annuelle utilisée par le tableau de suivi administratif. */
+  async getAnnualMatrix(year: number) {
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      throw new BadRequestException('Année invalide.');
+    }
+    const monthly = await this.findMonthlyContribution();
+    const [members, payments, exemptions] = await Promise.all([
+      this.prisma.member.findMany({
+        where: { profileCompleted: true, role: { not: Role.ADMIN } },
+        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+        select: {
+          id: true, firstName: true, lastName: true, phone: true, role: true,
+          profilePhotoUrl: true, isSuspended: true, createdAt: true,
+        },
+      }),
+      this.prisma.payment.findMany({
+        where: {
+          contributionId: monthly.id,
+          periodYear: year,
+          cancelledAt: null,
+          periodMonth: { not: null },
+        },
+        select: { memberId: true, periodMonth: true, amount: true, paidAt: true },
+      }),
+      this.prisma.contributionExemption.findMany({
+        where: { periodYear: year },
+        select: { memberId: true, periodMonth: true },
+      }),
+    ]);
+    const now = new Date();
+    const currentKey = now.getFullYear() * 12 + now.getMonth() + 1;
+    const amount = Number(monthly.amount ?? 0);
+    const paymentMap = new Map<string, { total: number; paidAt: Date }>();
+    const exemptionSet = new Set(exemptions.map((item) => `${item.memberId}-${item.periodMonth}`));
+    for (const payment of payments) {
+      const key = `${payment.memberId}-${payment.periodMonth}`;
+      const previous = paymentMap.get(key);
+      paymentMap.set(key, {
+        total: (previous?.total ?? 0) + Number(payment.amount),
+        paidAt: previous && previous.paidAt > payment.paidAt ? previous.paidAt : payment.paidAt,
+      });
+    }
+    return {
+      year,
+      monthlyAmount: amount,
+      contributionId: monthly.id,
+      members: members.map((member) => ({
+        ...member,
+        months: Array.from({ length: 12 }, (_, index) => {
+          const month = index + 1;
+          const periodKey = year * 12 + month;
+          const payment = paymentMap.get(`${member.id}-${month}`);
+          const joinedKey = member.createdAt.getFullYear() * 12 + member.createdAt.getMonth() + 1;
+          let status: 'PAID' | 'PARTIAL' | 'LATE' | 'ADVANCE' | 'INACTIVE' | 'NOT_DUE' | 'EXEMPT';
+          if (payment) {
+            status = periodKey > currentKey ? 'ADVANCE' : payment.total >= amount ? 'PAID' : 'PARTIAL';
+          } else if (exemptionSet.has(`${member.id}-${month}`)) {
+            status = 'EXEMPT';
+          } else if (periodKey < joinedKey) {
+            status = 'INACTIVE';
+          } else if (periodKey > currentKey) {
+            status = 'NOT_DUE';
+          } else {
+            status = 'LATE';
+          }
+          return { month, status, amountPaid: payment?.total ?? 0, paidAt: payment?.paidAt ?? null };
+        }),
+      })),
+    };
+  }
+
   /** Alias utilisé par le scheduler de relance. */
   async findActiveMonthlyCotisation() {
     return this.prisma.contribution.findFirst({
@@ -336,6 +407,10 @@ export class ContributionsService {
       select: { memberId: true },
     });
     for (const row of protectedMemberIds) paidMemberIds.add(row.memberId);
+    const exemptions = await this.prisma.contributionExemption.findMany({
+      where: { periodYear, periodMonth }, select: { memberId: true },
+    });
+    for (const row of exemptions) paidMemberIds.add(row.memberId);
 
     // Un accord terminé solde explicitement les mois enregistrés dans l'accord,
     // même si les encaissements ont été faits en une ou deux lignes comptables.
@@ -579,6 +654,10 @@ export class ContributionsService {
     for (const agreement of completedAgreements) {
       for (const period of agreement.months as Array<{ year: number; month: number }>) paidSet.add(`${period.year}-${period.month}`);
     }
+    const exemptions = await this.prisma.contributionExemption.findMany({
+      where: { memberId }, select: { periodYear: true, periodMonth: true },
+    });
+    for (const exemption of exemptions) paidSet.add(`${exemption.periodYear}-${exemption.periodMonth}`);
 
     const now = new Date();
     const joinDate = member.createdAt;
