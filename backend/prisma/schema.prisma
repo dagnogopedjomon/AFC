@@ -23,6 +23,11 @@ enum Role {
   SUPPORTER
 }
 
+enum MembershipStatus {
+  PROSPECT
+  ACTIVE
+}
+
 enum ContributionType {
   MONTHLY      // Cotisation mensuelle obligatoire
   EXCEPTIONAL  // Équipements, événements, tournois, cadeaux (montant libre, clôture manuelle)
@@ -104,6 +109,8 @@ model Member {
   firstName         String
   lastName          String
   role              Role
+  membershipStatus  MembershipStatus @default(ACTIVE)
+  membershipStatusManual Boolean @default(false)
   profilePhotoUrl   String?
 
   // Optionnels

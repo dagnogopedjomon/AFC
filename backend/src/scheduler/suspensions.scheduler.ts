@@ -4,6 +4,7 @@ import { ContributionsService } from '../contributions/contributions.service';
 import { JekoService } from '../contributions/jeko.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RegularizationsService } from '../regularizations/regularizations.service';
+import { MembersService } from '../members/members.service';
 
 @Injectable()
 export class SuspensionsScheduler {
@@ -14,7 +15,18 @@ export class SuspensionsScheduler {
     private readonly jekoService: JekoService,
     private readonly notifications: NotificationsService,
     private readonly regularizations: RegularizationsService,
+    private readonly members: MembersService,
   ) {}
+
+  /** Passer automatiquement les prospects à actifs après six mois d’ancienneté. */
+  @Cron('10 0 * * *')
+  async handleProspectPromotions() {
+    try {
+      await this.members.promoteEligibleProspects();
+    } catch (err) {
+      this.logger.error('Erreur promotion des prospects:', err);
+    }
+  }
 
   /** Appliquer les suspensions chaque jour à 00:05 (après le 10, membres sans paiement du mois → suspendus). */
   @Cron('5 0 * * *')

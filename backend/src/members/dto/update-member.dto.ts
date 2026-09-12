@@ -1,5 +1,5 @@
 import { IsString, IsOptional, MinLength, IsEmail, IsBoolean, IsEnum } from 'class-validator';
-import { Role } from '@prisma/client';
+import { MembershipStatus, Role } from '@prisma/client';
 
 export class UpdateMemberDto {
   @IsOptional()
@@ -44,4 +44,9 @@ export class UpdateMemberDto {
   @IsOptional()
   @IsEnum(Role, { message: 'Rôle invalide' })
   role?: Role;
+
+  /** Statut prospect/actif, modifiable manuellement par l’Admin. */
+  @IsOptional()
+  @IsEnum(MembershipStatus, { message: 'Statut de membre invalide' })
+  membershipStatus?: MembershipStatus;
 }

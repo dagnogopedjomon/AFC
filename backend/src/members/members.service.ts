@@ -6,7 +6,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role } from '@prisma/client';
+import { MembershipStatus, Role } from '@prisma/client';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
@@ -40,6 +40,7 @@ export class MembersService {
         firstName: 'Invité',
         lastName: '—',
         role: Role.PLAYER,
+        membershipStatus: MembershipStatus.PROSPECT,
         profileCompleted: false,
       },
       select: this.selectPublic(),
@@ -82,6 +83,7 @@ export class MembersService {
         firstName: dto.firstName.trim(),
         lastName: dto.lastName.trim(),
         role: dto.role,
+        membershipStatus: MembershipStatus.PROSPECT,
         profilePhotoUrl: dto.profilePhotoUrl ?? null,
         email: dto.email?.trim() ?? null,
         neighborhood: dto.neighborhood?.trim() ?? null,
@@ -94,6 +96,7 @@ export class MembersService {
   }
 
   async findAll() {
+    await this.promoteEligibleProspects();
     return this.prisma.member.findMany({
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
       select: this.selectPublic(),
@@ -106,6 +109,7 @@ export class MembersService {
   }
 
   async findOne(id: string) {
+    await this.promoteEligibleProspects();
     const member = await this.prisma.member.findUnique({
       where: { id },
       select: this.selectPublic(),
@@ -143,6 +147,10 @@ export class MembersService {
     }
     if (dto.role !== undefined && currentUserRole === Role.ADMIN && !isSelf) {
       data.role = dto.role;
+    }
+    if (dto.membershipStatus !== undefined && currentUserRole === Role.ADMIN && !isSelf) {
+      data.membershipStatus = dto.membershipStatus;
+      data.membershipStatusManual = true;
     }
 
     const updated = await this.prisma.member.update({
@@ -208,6 +216,7 @@ export class MembersService {
       firstName: true,
       lastName: true,
       role: true,
+      membershipStatus: true,
       profilePhotoUrl: true,
       email: true,
       neighborhood: true,
@@ -218,5 +227,19 @@ export class MembersService {
       createdAt: true,
       updatedAt: true,
     };
+  }
+
+  /** Promote prospects after six months, unless an admin explicitly overrode the status. */
+  async promoteEligibleProspects() {
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 6);
+    await this.prisma.member.updateMany({
+      where: {
+        membershipStatus: MembershipStatus.PROSPECT,
+        membershipStatusManual: false,
+        createdAt: { lte: cutoff },
+      },
+      data: { membershipStatus: MembershipStatus.ACTIVE },
+    });
   }
 }
