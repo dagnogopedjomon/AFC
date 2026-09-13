@@ -347,6 +347,7 @@ model CashBox {
   description String?  @db.Text
   order       Int      @default(0)   // Ordre d'affichage
   isDefault   Boolean  @default(false) // Une seule à true : caisse par défaut pour les entrées
+  openingBalance Decimal @default(0) @db.Decimal(12, 2) // Fonds déjà détenus avant l'utilisation de l'application
 
   expenses      Expense[]
   payments      Payment[]

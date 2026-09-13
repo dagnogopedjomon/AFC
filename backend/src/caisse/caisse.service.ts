@@ -43,6 +43,7 @@ export class CaisseService {
         description: dto.description?.trim() || null,
         order: dto.order ?? 0,
         isDefault: dto.isDefault ?? false,
+        openingBalance: dto.openingBalance ?? 0,
       },
     });
   }
@@ -60,6 +61,7 @@ export class CaisseService {
         ...(dto.description !== undefined && { description: dto.description?.trim() || null }),
         ...(dto.order !== undefined && { order: dto.order }),
         ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
+        ...(dto.openingBalance !== undefined && { openingBalance: dto.openingBalance }),
       },
     });
   }
@@ -237,7 +239,7 @@ export class CaisseService {
     const defaultId = await this.getDefaultCashBoxId();
     const boxes = await this.prisma.cashBox.findMany({
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-      select: { id: true, name: true, description: true, order: true, isDefault: true },
+      select: { id: true, name: true, description: true, order: true, isDefault: true, openingBalance: true },
     });
 
     const boxSummaries = await Promise.all(
@@ -273,6 +275,7 @@ export class CaisseService {
           this.prisma.cashBoxTransfer.aggregate({ where: withdrawalEntriesWhere, _sum: { amount: true } }),
         ]);
         const entries =
+          Number(box.openingBalance) +
           Number(paymentsSum._sum.amount ?? 0) +
           Number(finesSum._sum.amount ?? 0) +
           Number(allocIn._sum.amount ?? 0) +
@@ -288,6 +291,7 @@ export class CaisseService {
           description: box.description,
           order: box.order,
           isDefault: box.isDefault,
+          openingBalance: Number(box.openingBalance),
           solde,
           totalEntries: entries,
           totalExits: exits,
@@ -304,7 +308,8 @@ export class CaisseService {
         _sum: { amount: true },
       }),
     ]);
-    const entries = Number(totalPayments._sum.amount ?? 0) + Number(totalFines._sum.amount ?? 0);
+    const openingBalances = boxes.reduce((sum, box) => sum + Number(box.openingBalance), 0);
+    const entries = openingBalances + Number(totalPayments._sum.amount ?? 0) + Number(totalFines._sum.amount ?? 0);
     const exits = Number(totalExpenses._sum.amount ?? 0);
 
     return {
@@ -358,6 +363,7 @@ export class CaisseService {
     ]);
 
     const entries =
+      Number(box.openingBalance) +
       Number(paymentsSum._sum.amount ?? 0) +
       Number(finesSum._sum.amount ?? 0) +
       Number(allocIn._sum.amount ?? 0) +

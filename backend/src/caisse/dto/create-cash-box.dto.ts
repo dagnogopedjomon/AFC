@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsInt, IsBoolean, Min } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsInt, IsBoolean, IsNumber, Min } from 'class-validator';
 
 export class CreateCashBoxDto {
   @IsNotEmpty({ message: 'Le nom est requis' })
@@ -17,4 +17,9 @@ export class CreateCashBoxDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  openingBalance?: number;
 }

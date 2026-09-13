@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, IsBoolean, Min } from 'class-validator';
+import { IsOptional, IsString, IsInt, IsBoolean, IsNumber, Min } from 'class-validator';
 
 export class UpdateCashBoxDto {
   @IsOptional()
@@ -17,4 +17,9 @@ export class UpdateCashBoxDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  openingBalance?: number;
 }
