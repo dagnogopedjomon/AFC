@@ -8,6 +8,7 @@ export type RequestUser = {
   id: string;
   phone: string;
   role: Role;
+  deviceId?: string;
 };
 
 @Injectable()
@@ -25,7 +26,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (!user) {
       throw new UnauthorizedException('Membre introuvable');
     }
+    await this.authService.assertDevice(user.id, payload.deviceId);
     // Autoriser les membres suspendus à s'authentifier - le frontend gère la redirection
-    return { id: user.id, phone: user.phone, role: user.role };
+    return { id: user.id, phone: user.phone, role: user.role, deviceId: payload.deviceId };
   }
 }

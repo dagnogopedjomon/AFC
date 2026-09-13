@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Role } from '@prisma/client';
 
-export type JwtPayload = { sub: string; phone: string; role: Role };
+export type JwtPayload = { sub: string; phone: string; role: Role; deviceId?: string };
 export type ActivationPayload = { sub: string; purpose: 'activation' };
 
 export interface AuthResult {
@@ -94,14 +94,18 @@ export class AuthService {
     return member;
   }
 
-  async login(phone: string, password: string): Promise<AuthResult> {
+  async login(phone: string, password: string, deviceId: string): Promise<AuthResult> {
     try {
       const member = await this.validateUser(phone, password);
       if (!member) {
         throw new UnauthorizedException('Identifiant ou mot de passe incorrect');
       }
+      if (member.activeDeviceId && member.activeDeviceId !== deviceId) {
+        throw new ForbiddenException('Ce compte est déjà connecté sur un autre appareil. Déconnectez-vous d’abord de celui-ci.');
+      }
+      await this.prisma.member.update({ where: { id: member.id }, data: { activeDeviceId: deviceId } });
       // Autoriser les membres suspendus à se connecter - le frontend les redirigera vers la page de paiement
-      const payload: JwtPayload = { sub: member.id, phone: member.phone, role: member.role };
+      const payload: JwtPayload = { sub: member.id, phone: member.phone, role: member.role, deviceId };
       const access_token = this.jwtService.sign(payload);
       return {
         access_token,
@@ -127,6 +131,22 @@ export class AuthService {
       );
       const message = error instanceof Error ? error.message : 'Erreur inconnue';
       throw new InternalServerErrorException(`Erreur lors de la connexion: ${message}`);
+    }
+  }
+
+  async logout(userId: string, deviceId?: string) {
+    await this.prisma.member.updateMany({
+      where: { id: userId, ...(deviceId ? { activeDeviceId: deviceId } : {}) },
+      data: { activeDeviceId: null },
+    });
+    return { ok: true };
+  }
+
+  async assertDevice(userId: string, deviceId?: string) {
+    const member = await this.prisma.member.findUnique({ where: { id: userId }, select: { activeDeviceId: true } });
+    if (!member) throw new UnauthorizedException('Membre introuvable');
+    if (deviceId && member.activeDeviceId && member.activeDeviceId !== deviceId) {
+      throw new UnauthorizedException('Session ouverte sur un autre appareil');
     }
   }
 

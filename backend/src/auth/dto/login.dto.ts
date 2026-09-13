@@ -9,4 +9,8 @@ export class LoginDto {
   @IsString()
   @MinLength(6, { message: 'Le mot de passe doit contenir au moins 6 caractères' })
   password: string;
+
+  @IsNotEmpty({ message: 'L’appareil est requis' })
+  @IsString()
+  deviceId: string;
 }

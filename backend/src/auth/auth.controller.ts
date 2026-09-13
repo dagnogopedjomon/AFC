@@ -19,7 +19,7 @@ export class AuthController {
   @Public()
   @Post('login')
   async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto.phone, dto.password);
+    return this.authService.login(dto.phone, dto.password, dto.deviceId);
   }
 
   @Public()
@@ -45,6 +45,12 @@ export class AuthController {
   @Post('set-password')
   async setPassword(@Body() dto: SetPasswordDto) {
     return this.authService.setPassword(dto.activationToken, dto.password);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  logout(@CurrentUser() user: RequestUser) {
+    return this.authService.logout(user.id, user.deviceId);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -153,7 +153,7 @@ export class ContributionsController {
     if (!contribution) throw new BadRequestException('Cotisation introuvable.');
     return this.jekoService.createPaymentLink({
       amountFcfa: dto.amount,
-      memberId: req.user.id,
+      memberId: req.user.role === Role.ADMIN && dto.memberId ? dto.memberId : req.user.id,
       contributionId: dto.contributionId,
       periodYear: dto.periodYear,
       periodMonth: dto.periodMonth,

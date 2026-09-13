@@ -1,6 +1,10 @@
 import { IsString, IsNumber, IsOptional, Min, IsInt, Max } from 'class-validator';
 
 export class JekoLinkDto {
+  @IsOptional()
+  @IsString()
+  memberId?: string;
+
   @IsString()
   contributionId: string;
 

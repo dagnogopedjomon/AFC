@@ -102,6 +102,7 @@ model Member {
   // Authentification (téléphone = identité unique)
   phone             String   @unique
   passwordHash      String?
+  activeDeviceId    String? // Un seul appareil autorisé à la fois
   otpCode           String?
   otpExpiresAt      DateTime?
 
