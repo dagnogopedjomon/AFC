@@ -76,21 +76,26 @@ export class MembersService {
       throw new ConflictException('Ce numéro de téléphone est déjà utilisé');
     }
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-    const member = await this.prisma.member.create({
-      data: {
-        phone: dto.phone.trim(),
-        passwordHash,
-        firstName: dto.firstName.trim(),
-        lastName: dto.lastName.trim(),
-        role: dto.role,
-        membershipStatus: MembershipStatus.PROSPECT,
-        profilePhotoUrl: dto.profilePhotoUrl ?? null,
-        email: dto.email?.trim() ?? null,
-        neighborhood: dto.neighborhood?.trim() ?? null,
-        secondaryContact: dto.secondaryContact?.trim() ?? null,
-        profileCompleted: false,
-      },
-      select: this.selectPublic(),
+    const member = await this.prisma.$transaction(async (tx) => {
+      if (dto.role === Role.ADMIN) {
+        await tx.member.updateMany({ where: { role: Role.ADMIN }, data: { role: Role.PLAYER } });
+      }
+      return tx.member.create({
+        data: {
+          phone: dto.phone.trim(),
+          passwordHash,
+          firstName: dto.firstName.trim(),
+          lastName: dto.lastName.trim(),
+          role: dto.role,
+          membershipStatus: MembershipStatus.PROSPECT,
+          profilePhotoUrl: dto.profilePhotoUrl ?? null,
+          email: dto.email?.trim() ?? null,
+          neighborhood: dto.neighborhood?.trim() ?? null,
+          secondaryContact: dto.secondaryContact?.trim() ?? null,
+          profileCompleted: false,
+        },
+        select: this.selectPublic(),
+      });
     });
     return member;
   }
@@ -153,10 +158,15 @@ export class MembersService {
       data.membershipStatusManual = true;
     }
 
-    const updated = await this.prisma.member.update({
-      where: { id },
-      data,
-      select: this.selectPublic(),
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (data.role === Role.ADMIN) {
+        await tx.member.updateMany({ where: { role: Role.ADMIN, id: { not: id } }, data: { role: Role.PLAYER } });
+      }
+      return tx.member.update({
+        where: { id },
+        data,
+        select: this.selectPublic(),
+      });
     });
     if (dto.isSuspended === false && existing.isSuspended) {
       await this.logAudit(id, 'REACTIVATED', currentUserId, undefined);
