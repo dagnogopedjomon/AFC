@@ -127,6 +127,7 @@ export class MembersService {
     const existing = await this.findOne(id);
     const isSelf = id === currentUserId;
     const data: Record<string, unknown> = {};
+    let previousAdminIds: string[] = [];
 
     if (dto.password) {
       data.passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
@@ -160,6 +161,8 @@ export class MembersService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (data.role === Role.ADMIN) {
+        const previousAdmins = await tx.member.findMany({ where: { role: Role.ADMIN, id: { not: id } }, select: { id: true } });
+        previousAdminIds = previousAdmins.map((member) => member.id);
         await tx.member.updateMany({ where: { role: Role.ADMIN, id: { not: id } }, data: { role: Role.PLAYER } });
       }
       return tx.member.update({
@@ -168,6 +171,13 @@ export class MembersService {
         select: this.selectPublic(),
       });
     });
+    if (data.role === Role.ADMIN && previousAdminIds.length > 0) {
+      const notifications = [
+        ...previousAdminIds.map((memberId) => this.notifications.createInApp(memberId, `Le rôle Administrateur a été transféré à ${updated.firstName} ${updated.lastName}. Votre compte conserve son accès membre.`, 'Transfert d’administration')),
+        this.notifications.createInApp(updated.id, 'Vous êtes désormais l’unique Administrateur de l’Amicale FC. Vous disposez maintenant des droits de gestion du club.', 'Vous êtes administrateur'),
+      ];
+      await Promise.allSettled(notifications);
+    }
     if (dto.isSuspended === false && existing.isSuspended) {
       await this.logAudit(id, 'REACTIVATED', currentUserId, undefined);
     } else {
