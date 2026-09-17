@@ -224,8 +224,23 @@ export class MembersService {
   }
 
   async remove(id: string) {
-    await this.findOne(id);
-    await this.prisma.member.delete({ where: { id } });
+    const member = await this.findOne(id);
+    if (!member.profileCompleted) {
+      // Invitation jamais confirmée par le membre : aucune donnée financière possible,
+      // on purge le seul journal qui bloquerait la suppression (historique SMS d'invitation).
+      await this.prisma.$transaction([
+        this.prisma.notificationLog.deleteMany({ where: { memberId: id } }),
+        this.prisma.member.delete({ where: { id } }),
+      ]);
+      return { success: true };
+    }
+    try {
+      await this.prisma.member.delete({ where: { id } });
+    } catch {
+      throw new ConflictException(
+        "Ce membre a des opérations enregistrées (paiements, amendes, dépenses...) et ne peut pas être supprimé définitivement. Gelez ou suspendez plutôt son compte.",
+      );
+    }
     return { success: true };
   }
 
