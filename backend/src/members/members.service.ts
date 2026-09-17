@@ -228,10 +228,16 @@ export class MembersService {
     if (!member.profileCompleted) {
       // Invitation jamais confirmée par le membre : aucune donnée financière possible,
       // on purge le seul journal qui bloquerait la suppression (historique SMS d'invitation).
-      await this.prisma.$transaction([
-        this.prisma.notificationLog.deleteMany({ where: { memberId: id } }),
-        this.prisma.member.delete({ where: { id } }),
-      ]);
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.notificationLog.deleteMany({ where: { memberId: id } });
+          await tx.member.delete({ where: { id } });
+        });
+      } catch {
+        throw new ConflictException(
+          "Ce membre a des opérations enregistrées et ne peut pas être supprimé définitivement. Gelez ou suspendez plutôt son compte.",
+        );
+      }
       return { success: true };
     }
     try {
