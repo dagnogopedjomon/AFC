@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, Req, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, Req, UseGuards, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ContributionsService } from './contributions.service';
 import { CreateContributionDto } from './dto/create-contribution.dto';
 import { UpdateContributionDto } from './dto/update-contribution.dto';
@@ -16,6 +16,15 @@ import type { RequestUser } from '../auth/jwt.strategy';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+
+const BUREAU_ROLES: Role[] = [
+  Role.ADMIN,
+  Role.PRESIDENT,
+  Role.SECRETARY_GENERAL,
+  Role.TREASURER,
+  Role.COMMISSIONER,
+  Role.GENERAL_MEANS_MANAGER,
+];
 
 @Controller('contributions')
 @UseGuards(JwtAuthGuard)
@@ -211,12 +220,16 @@ export class ContributionsController {
   @Get('payments')
   @UseGuards(ProfileCompletedGuard)
   getPayments(
+    @Req() req: { user: RequestUser },
     @Query('memberId') memberId?: string,
     @Query('contributionId') contributionId?: string,
     @Query('year') year?: string,
     @Query('month') month?: string,
     @Query('limit') limit?: string,
   ) {
+    if (memberId && memberId !== req.user.id && !BUREAU_ROLES.includes(req.user.role)) {
+      throw new ForbiddenException("Vous ne pouvez consulter que vos propres paiements.");
+    }
     return this.contributionsService.getPayments({
       memberId,
       contributionId,
@@ -237,7 +250,10 @@ export class ContributionsController {
 
   @Get('history/member/:memberId')
   @UseGuards(ProfileCompletedGuard)
-  getMemberHistory(@Param('memberId') memberId: string) {
+  getMemberHistory(@Param('memberId') memberId: string, @Req() req: { user: RequestUser }) {
+    if (memberId !== req.user.id && !BUREAU_ROLES.includes(req.user.role)) {
+      throw new ForbiddenException("Vous ne pouvez consulter que votre propre historique.");
+    }
     return this.contributionsService.getMemberHistory(memberId);
   }
 

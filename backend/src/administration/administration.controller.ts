@@ -21,6 +21,9 @@ export class AdministrationController {
 
   @Get('fines')
   fines(@Query('memberId') memberId?: string, @Query('status') status?: FineStatus, @Query('reason') reason?: string) { return this.service.listFines({ memberId, status, reason }); }
+  @Get('fines/me')
+  @Roles(...Object.values(Role))
+  myFines(@CurrentUser() user: RequestUser) { return this.service.listFines({ memberId: user.id }); }
   @Post('fines')
   createFine(@Body() body: { memberId: string; reason: string; amount: number; note?: string }, @CurrentUser() user: RequestUser) { return this.service.createFine(body, user.id); }
   @Patch('fines/:id/settle')
