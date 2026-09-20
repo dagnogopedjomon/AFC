@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { FineStatus } from '@prisma/client';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { FineStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import type { RequestUser } from '../auth/jwt.strategy';
 
 @Injectable()
 export class AdministrationService {
@@ -61,6 +62,16 @@ export class AdministrationService {
     if (fine.status !== FineStatus.UNPAID) throw new BadRequestException('Cette amende n’est plus à régler.');
     const cashBox = await this.prisma.cashBox.findFirst({ where: { isDefault: true }, select: { id: true } });
     return this.prisma.fine.update({ where: { id }, data: { status: FineStatus.PAID, paidAt: new Date(), cashBoxId: cashBox?.id ?? null } });
+  }
+
+  async getFineForPayment(id: string, user: RequestUser) {
+    const fine = await this.prisma.fine.findUnique({ where: { id } });
+    if (!fine) throw new NotFoundException('Amende introuvable.');
+    if (fine.status !== FineStatus.UNPAID) throw new BadRequestException('Cette amende n’est plus à régler.');
+    const isOwner = fine.memberId === user.id;
+    const isAdmin = user.role === Role.ADMIN || user.role === Role.TREASURER;
+    if (!isOwner && !isAdmin) throw new ForbiddenException('Vous ne pouvez pas régler l’amende d’un autre membre.');
+    return fine;
   }
 
   async cancelFine(id: string) {

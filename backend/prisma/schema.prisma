@@ -318,8 +318,10 @@ model PendingJekoPayment {
   jekoLinkId     String?
   memberId       String
   member         Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  contributionId String
-  contribution   Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+  contributionId String?
+  contribution   Contribution? @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+  fineId         String?
+  fine           Fine?    @relation(fields: [fineId], references: [id], onDelete: Cascade)
   amountFcfa     Int
   periodYear     Int?
   periodMonth    Int?
@@ -333,6 +335,7 @@ model PendingJekoPayment {
   @@index([reference])
   @@index([expiresAt])
   @@index([regularizationAgreementId])
+  @@index([fineId])
 }
 
 // ========== Module 4 : Caisse (sous-caisses type Wave, dépenses, double validation) ==========
@@ -450,6 +453,7 @@ model Fine {
   note        String?    @db.Text
   cashBoxId   String?
   cashBox     CashBox?   @relation(fields: [cashBoxId], references: [id], onDelete: SetNull)
+  pendingJekoPayments PendingJekoPayment[]
 
   @@index([memberId, status])
   @@index([createdAt])

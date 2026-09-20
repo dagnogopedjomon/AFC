@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 import { normalizeE164 } from '../notifications/sayelesend.util';
-import { ContributionType, Prisma, RegularizationStatus } from '@prisma/client';
+import { ContributionType, FineStatus, Prisma, RegularizationStatus } from '@prisma/client';
 
 const JEKO_BASE = 'https://api.jeko.africa/partner_api';
 
@@ -186,6 +186,124 @@ export class JekoService {
     return { reference, link: data.link };
   }
 
+  /** Crée une demande de paiement Jeko (redirect) pour le règlement d'une amende. */
+  async createFinePaymentRequest(params: {
+    amountFcfa: number;
+    memberId: string;
+    fineId: string;
+    paymentMethod: string;
+    payerPhone?: string;
+  }): Promise<{ reference: string; redirectUrl: string }> {
+    if (!this.isConfigured()) {
+      throw new BadRequestException('Paiement en ligne non configuré (variables JEKO manquantes).');
+    }
+
+    const reference = randomUUID();
+    const successUrl = `${this.frontendUrl}/dashboard/payment/success?ref=${reference}&type=fine`;
+    const errorUrl = `${this.frontendUrl}/dashboard/mes-amendes?jeko_error=1`;
+
+    const paymentData: Record<string, unknown> = {
+      paymentMethod: params.paymentMethod,
+      successUrl,
+      errorUrl,
+      forceProviderDirect: true,
+    };
+    if (params.payerPhone) {
+      paymentData.payerPhone = normalizeE164(params.payerPhone);
+    }
+
+    const res = await fetch(`${JEKO_BASE}/payment_requests`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        storeId: this.storeId,
+        amountCents: params.amountFcfa * 100,
+        currency: 'XOF',
+        reference,
+        paymentDetails: { type: 'redirect', data: paymentData },
+      }),
+    });
+
+    const data = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      redirectUrl?: string;
+      error?: string;
+      message?: string;
+      errors?: Array<{ message: string }>;
+    };
+
+    if (!res.ok || !data.id || !data.redirectUrl) {
+      const msg = data.error || data.message || data.errors?.[0]?.message || `HTTP ${res.status}`;
+      console.error('[Jeko] createFinePaymentRequest error:', msg, data);
+      throw new BadRequestException(`Impossible de créer la demande de paiement : ${msg}`);
+    }
+
+    await this.prisma.pendingJekoPayment.create({
+      data: {
+        reference,
+        jekoRequestId: data.id,
+        memberId: params.memberId,
+        fineId: params.fineId,
+        amountFcfa: params.amountFcfa,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+    });
+
+    return { reference, redirectUrl: data.redirectUrl };
+  }
+
+  /** Crée un lien de paiement Jeko (carte bancaire) pour le règlement d'une amende. */
+  async createFinePaymentLink(params: {
+    amountFcfa: number;
+    memberId: string;
+    fineId: string;
+    title: string;
+  }): Promise<{ reference: string; link: string }> {
+    if (!this.isConfigured()) {
+      throw new BadRequestException('Paiement en ligne non configuré (variables JEKO manquantes).');
+    }
+
+    const reference = randomUUID();
+    const res = await fetch(`${JEKO_BASE}/payment_links`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        storeId: this.storeId,
+        title: params.title,
+        amountCents: params.amountFcfa * 100,
+        currency: 'XOF',
+        allowMultiplePayments: false,
+      }),
+    });
+
+    const data = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      link?: string;
+      error?: string;
+      message?: string;
+      errors?: Array<{ message: string }>;
+    };
+
+    if (!res.ok || !data.id || !data.link) {
+      const msg = data.error || data.message || data.errors?.[0]?.message || `HTTP ${res.status}`;
+      console.error('[Jeko] createFinePaymentLink error:', msg, data);
+      throw new BadRequestException(`Impossible de créer le lien de paiement : ${msg}`);
+    }
+
+    await this.prisma.pendingJekoPayment.create({
+      data: {
+        reference,
+        jekoLinkId: data.id,
+        memberId: params.memberId,
+        fineId: params.fineId,
+        amountFcfa: params.amountFcfa,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+    });
+
+    return { reference, link: data.link };
+  }
+
   /**
    * Vérifie si la demande de paiement ou le lien de paiement est confirmé.
    * Si oui, enregistre le paiement en base et supprime l'entrée pending.
@@ -297,9 +415,17 @@ export class JekoService {
 
   /** Logique commune d'enregistrement du paiement (partagée verify + webhook). */
   private async recordPaymentFromContext(
-    context: { memberId: string; contributionId: string; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null; jekoLinkId: string | null; regularizationAgreementId: string | null; advanceMonths: number | null },
+    context: { memberId: string; contributionId: string | null; fineId: string | null; amountFcfa: number; periodYear: number | null; periodMonth: number | null; cashBoxId: string | null; jekoRequestId: string | null; jekoLinkId: string | null; regularizationAgreementId: string | null; advanceMonths: number | null },
     reference: string,
   ): Promise<{ paid: boolean; payment: object }> {
+    if (context.fineId) {
+      return this.recordFinePaymentFromContext(
+        { ...context, fineId: context.fineId },
+        reference,
+      );
+    }
+    const contributionId = context.contributionId!;
+
     let cashBoxId = context.cashBoxId ?? null;
     if (!cashBoxId) {
       const defaultBox = await this.prisma.cashBox.findFirst({ where: { isDefault: true } });
@@ -307,7 +433,7 @@ export class JekoService {
     }
 
     const contribution = await this.prisma.contribution.findUnique({
-      where: { id: context.contributionId },
+      where: { id: contributionId },
       select: { type: true, amount: true },
     });
 
@@ -340,7 +466,7 @@ export class JekoService {
         const payment = await tx.payment.create({
           data: {
             memberId: context.memberId,
-            contributionId: context.contributionId,
+            contributionId: contributionId,
             amount: context.amountFcfa,
             cashBoxId,
             regularizationAgreementId: agreement.id,
@@ -362,7 +488,7 @@ export class JekoService {
 
       if (context.advanceMonths && contribution?.type === ContributionType.MONTHLY && contribution.amount) {
         const existing = await tx.payment.findMany({
-          where: { memberId: context.memberId, contributionId: context.contributionId, cancelledAt: null, periodYear: { not: null }, periodMonth: { not: null } },
+          where: { memberId: context.memberId, contributionId: contributionId, cancelledAt: null, periodYear: { not: null }, periodMonth: { not: null } },
           select: { periodYear: true, periodMonth: true },
         });
         const paid = new Set(existing.map((row) => `${row.periodYear}-${row.periodMonth}`));
@@ -380,7 +506,7 @@ export class JekoService {
         if (context.amountFcfa !== monthlyAmount * periods.length) throw new BadRequestException('Le montant du paiement anticipé est invalide.');
         await tx.payment.createMany({ data: periods.map((period) => ({
           memberId: context.memberId,
-          contributionId: context.contributionId,
+          contributionId: contributionId,
           amount: contribution.amount!,
           periodYear: period.year,
           periodMonth: period.month,
@@ -402,7 +528,7 @@ export class JekoService {
         const payments = await tx.payment.findMany({
           where: {
             memberId: context.memberId,
-            contributionId: context.contributionId,
+            contributionId: contributionId,
             cancelledAt: null,
             periodYear: { not: null },
             periodMonth: { not: null },
@@ -411,7 +537,7 @@ export class JekoService {
         });
         const paidSet = new Set(payments.map((p) => `${p.periodYear}-${p.periodMonth}`));
         const completedAgreements = await tx.regularizationAgreement.findMany({
-          where: { memberId: context.memberId, contributionId: context.contributionId, status: RegularizationStatus.COMPLETED },
+          where: { memberId: context.memberId, contributionId: contributionId, status: RegularizationStatus.COMPLETED },
           select: { months: true },
         });
         for (const agreement of completedAgreements) {
@@ -439,7 +565,7 @@ export class JekoService {
         const coveredMonths = unpaidMonths.slice(0, coveredCount);
         const paymentRows: Prisma.PaymentCreateManyInput[] = coveredMonths.map((period) => ({
           memberId: context.memberId,
-          contributionId: context.contributionId,
+          contributionId: contributionId,
           amount: monthlyAmount,
           periodYear: period.year,
           periodMonth: period.month,
@@ -451,7 +577,7 @@ export class JekoService {
         if (remainder > 0) {
           paymentRows.push({
             memberId: context.memberId,
-            contributionId: context.contributionId,
+            contributionId: contributionId,
             amount: remainder,
             periodYear: null,
             periodMonth: null,
@@ -474,7 +600,7 @@ export class JekoService {
       const payment = await tx.payment.create({
         data: {
           memberId: context.memberId,
-          contributionId: context.contributionId,
+          contributionId: contributionId,
           amount: context.amountFcfa,
           periodYear: context.periodYear,
           periodMonth: context.periodMonth,
@@ -486,6 +612,44 @@ export class JekoService {
     });
 
     this.logger.log(`[Jeko] ${result.paymentsCount} paiement(s) enregistré(s), réactivation=${result.reactivated}`);
+    return { paid: result.paymentsCount > 0, payment: result.payment };
+  }
+
+  /** Enregistrement d'un paiement d'amende (verify + webhook). */
+  private async recordFinePaymentFromContext(
+    context: { memberId: string; fineId: string; amountFcfa: number; cashBoxId: string | null },
+    reference: string,
+  ): Promise<{ paid: boolean; payment: object }> {
+    let cashBoxId = context.cashBoxId ?? null;
+    if (!cashBoxId) {
+      const defaultBox = await this.prisma.cashBox.findFirst({ where: { isDefault: true } });
+      cashBoxId = defaultBox?.id ?? null;
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.pendingJekoPayment.deleteMany({ where: { reference } });
+      if (consumed.count === 0) {
+        const fine = await tx.fine.findUnique({ where: { id: context.fineId } });
+        return { payment: fine ?? {}, paymentsCount: fine?.status === FineStatus.PAID ? 1 : 0 };
+      }
+
+      const fine = await tx.fine.findUnique({ where: { id: context.fineId } });
+      if (!fine) throw new BadRequestException('Amende introuvable.');
+      if (fine.status !== FineStatus.UNPAID) {
+        return { payment: fine, paymentsCount: fine.status === FineStatus.PAID ? 1 : 0 };
+      }
+      if (context.amountFcfa !== Number(fine.amount)) {
+        throw new BadRequestException('Le montant du paiement ne correspond pas au montant de l’amende.');
+      }
+
+      const updated = await tx.fine.update({
+        where: { id: context.fineId },
+        data: { status: FineStatus.PAID, paidAt: new Date(), cashBoxId },
+      });
+      return { payment: updated, paymentsCount: 1 };
+    });
+
+    this.logger.log(`[Jeko] Amende ${context.fineId} réglée=${result.paymentsCount > 0}`);
     return { paid: result.paymentsCount > 0, payment: result.payment };
   }
 
