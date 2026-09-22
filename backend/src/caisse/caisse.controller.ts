@@ -23,6 +23,28 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Role } from '@prisma/client';
 import type { RequestUser } from '../auth/jwt.strategy';
 
+const BUREAU_ROLES: Role[] = [
+  Role.ADMIN,
+  Role.PRESIDENT,
+  Role.SECRETARY_GENERAL,
+  Role.TREASURER,
+  Role.COMMISSIONER,
+  Role.GENERAL_MEANS_MANAGER,
+];
+
+const ENTREE_LABELS: Record<string, string> = { payment: 'Cotisation', fine: 'Amende', allocation: 'Allocation' };
+const SORTIE_LABELS: Record<string, string> = { expense: 'Dépense', withdrawal: 'Retrait' };
+
+/**
+ * Transparence sur les montants, pas sur les identités : un membre simple voit les mouvements
+ * de caisse (montants, dates, types) mais pas qui a payé/demandé/validé quoi.
+ */
+function anonymize(entry: Record<string, unknown>) {
+  const { member, requestedBy, treasurerApprovedBy, commissionerApprovedBy, beneficiary, kind, type, ...rest } = entry;
+  const label = type === 'entree' ? ENTREE_LABELS[kind as string] : SORTIE_LABELS[kind as string];
+  return { ...rest, kind, type, ...(label ? { label } : {}) };
+}
+
 @Controller('caisse')
 @UseGuards(JwtAuthGuard, ProfileCompletedGuard)
 export class CaisseController {
@@ -35,8 +57,10 @@ export class CaisseController {
   }
 
   @Get('livre')
-  getLivre(@Query('limit') limit?: string) {
-    return this.caisseService.getLivreDeCaisse(limit ? parseInt(limit, 10) : 100);
+  async getLivre(@Query('limit') limit?: string, @CurrentUser() user?: RequestUser) {
+    const entries = await this.caisseService.getLivreDeCaisse(limit ? parseInt(limit, 10) : 100);
+    if (user && BUREAU_ROLES.includes(user.role)) return entries;
+    return entries.map((e) => anonymize(e as unknown as Record<string, unknown>));
   }
 
   @Get('boxes')
