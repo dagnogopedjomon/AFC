@@ -100,9 +100,7 @@ export class AuthService {
       if (!member) {
         throw new UnauthorizedException('Identifiant ou mot de passe incorrect');
       }
-      if (member.activeDeviceId && member.activeDeviceId !== deviceId) {
-        throw new ForbiddenException('Ce compte est déjà connecté sur un autre appareil. Déconnectez-vous d’abord de celui-ci.');
-      }
+      // Un seul appareil actif à la fois : une nouvelle connexion déconnecte automatiquement l'ancien appareil.
       await this.prisma.member.update({ where: { id: member.id }, data: { activeDeviceId: deviceId } });
       // Autoriser les membres suspendus à se connecter - le frontend les redirigera vers la page de paiement
       const payload: JwtPayload = { sub: member.id, phone: member.phone, role: member.role, deviceId };
