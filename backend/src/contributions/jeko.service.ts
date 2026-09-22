@@ -612,6 +612,15 @@ export class JekoService {
     });
 
     this.logger.log(`[Jeko] ${result.paymentsCount} paiement(s) enregistré(s), réactivation=${result.reactivated}`);
+    if (result.paymentsCount > 0) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          memberId: context.memberId,
+          title: 'Paiement enregistré',
+          message: `Votre paiement de ${context.amountFcfa.toLocaleString('fr-FR')} FCFA a bien été reçu.`,
+        },
+      }).catch(() => undefined);
+    }
     return { paid: result.paymentsCount > 0, payment: result.payment };
   }
 
@@ -650,6 +659,15 @@ export class JekoService {
     });
 
     this.logger.log(`[Jeko] Amende ${context.fineId} réglée=${result.paymentsCount > 0}`);
+    if (result.paymentsCount > 0) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          memberId: context.memberId,
+          title: 'Amende réglée',
+          message: `Votre amende de ${context.amountFcfa.toLocaleString('fr-FR')} FCFA a été réglée.`,
+        },
+      }).catch(() => undefined);
+    }
     return { paid: result.paymentsCount > 0, payment: result.payment };
   }
 

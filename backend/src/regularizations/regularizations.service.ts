@@ -72,6 +72,14 @@ export class RegularizationsService {
       include: { member: { select: { id: true, firstName: true, lastName: true, phone: true, isSuspended: true } }, createdBy: { select: { id: true, firstName: true, lastName: true } } },
     });
     await this.members.logAudit(dto.memberId, 'REGULARIZATION_CREATED', createdById, JSON.stringify({ agreementId: agreement.id, originalAmount: debt.totalOwed, agreedAmount: dto.agreedAmount, initialAmount: dto.initialAmount, deadline: dto.deadline ?? null }));
+    const deadlineLabel = dto.deadline ? ` avant le ${new Date(dto.deadline).toLocaleDateString('fr-FR')}` : '';
+    await this.prisma.inAppNotification.create({
+      data: {
+        memberId: dto.memberId,
+        title: 'Accord de régularisation',
+        message: `Un accord de régularisation a été créé pour vous : ${dto.agreedAmount.toLocaleString('fr-FR')} FCFA à régler${deadlineLabel}.`,
+      },
+    });
     return this.serialize(agreement);
   }
 

@@ -211,6 +211,16 @@ export class ContributionsService {
         'Paiement cotisation mensuelle',
       );
     }
+    const periodLabel = dto.periodYear && dto.periodMonth
+      ? ` (${new Date(dto.periodYear, dto.periodMonth - 1).toLocaleString('fr-FR', { month: 'long', year: 'numeric' })})`
+      : '';
+    await this.prisma.inAppNotification.create({
+      data: {
+        memberId: dto.memberId,
+        title: 'Paiement enregistré',
+        message: `Votre paiement de ${dto.amount.toLocaleString('fr-FR')} FCFA pour « ${contribution.name} »${periodLabel} a bien été enregistré.`,
+      },
+    });
     return result;
   }
 
@@ -253,6 +263,13 @@ export class ContributionsService {
         'Réactivation automatique après paiement anticipé hors application',
       );
     }
+    await this.prisma.inAppNotification.create({
+      data: {
+        memberId: dto.memberId,
+        title: 'Paiement enregistré',
+        message: `Votre paiement de ${expectedAmount.toLocaleString('fr-FR')} FCFA (${dto.months} mois) a bien été enregistré.`,
+      },
+    });
     return result;
   }
 
@@ -475,6 +492,13 @@ export class ContributionsService {
         'Suspension automatique (cotisation non à jour)',
       );
     }
+    await this.prisma.inAppNotification.createMany({
+      data: ids.map((id) => ({
+        memberId: id,
+        title: 'Compte suspendu',
+        message: 'Votre compte a été suspendu pour cotisations impayées. Régularisez votre situation pour retrouver l’accès.',
+      })),
+    });
     return { applied: ids.length, periodYear, periodMonth };
   }
 

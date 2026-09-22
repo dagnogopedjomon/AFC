@@ -50,10 +50,18 @@ export class AdministrationService {
   async createFine(data: { memberId: string; reason: string; amount: number; note?: string }, createdById: string) {
     if (!data.reason?.trim()) throw new BadRequestException('Le motif est requis.');
     if (!Number.isFinite(data.amount) || data.amount <= 0) throw new BadRequestException('Le montant doit être positif.');
-    return this.prisma.fine.create({ data: {
+    const fine = await this.prisma.fine.create({ data: {
       memberId: data.memberId, createdById, reason: data.reason.trim(), amount: data.amount,
       note: data.note?.trim() || null,
     }, include: { member: true } });
+    await this.prisma.inAppNotification.create({
+      data: {
+        memberId: data.memberId,
+        title: 'Nouvelle amende',
+        message: `Une amende de ${data.amount.toLocaleString('fr-FR')} FCFA vous a été attribuée : ${fine.reason}.`,
+      },
+    });
+    return fine;
   }
 
   async settleFine(id: string) {
@@ -61,7 +69,15 @@ export class AdministrationService {
     if (!fine) throw new NotFoundException('Amende introuvable.');
     if (fine.status !== FineStatus.UNPAID) throw new BadRequestException('Cette amende n’est plus à régler.');
     const cashBox = await this.prisma.cashBox.findFirst({ where: { isDefault: true }, select: { id: true } });
-    return this.prisma.fine.update({ where: { id }, data: { status: FineStatus.PAID, paidAt: new Date(), cashBoxId: cashBox?.id ?? null } });
+    const updated = await this.prisma.fine.update({ where: { id }, data: { status: FineStatus.PAID, paidAt: new Date(), cashBoxId: cashBox?.id ?? null } });
+    await this.prisma.inAppNotification.create({
+      data: {
+        memberId: fine.memberId,
+        title: 'Amende réglée',
+        message: `Votre amende de ${Number(fine.amount).toLocaleString('fr-FR')} FCFA (${fine.reason}) a été réglée.`,
+      },
+    });
+    return updated;
   }
 
   async getFineForPayment(id: string, user: RequestUser) {
