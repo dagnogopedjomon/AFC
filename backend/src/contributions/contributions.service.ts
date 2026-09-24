@@ -39,7 +39,37 @@ export class ContributionsService {
     return periods;
   }
 
+  /** Notifie (in-app) les membres concernés par une cotisation : les ciblés, sinon tous les membres actifs. */
+  private async notifyContributionMembers(
+    contribution: { targetMemberIds: string | null },
+    title: string,
+    message: string,
+  ) {
+    const ids = contribution.targetMemberIds
+      ? (JSON.parse(contribution.targetMemberIds) as string[])
+      : (await this.prisma.member.findMany({
+          where: { role: { not: Role.FORMER_PLAYER }, membershipStatus: 'ACTIVE' },
+          select: { id: true },
+        })).map((m) => m.id);
+    if (ids.length === 0) return;
+    await this.prisma.inAppNotification.createMany({ data: ids.map((memberId) => ({ memberId, title, message })) });
+  }
+
   async create(dto: CreateContributionDto) {
+    const created = await this.createRecord(dto);
+    if (created.type === ContributionType.EXCEPTIONAL) {
+      const amountLabel = created.amount != null ? `${Number(created.amount).toLocaleString('fr-FR')} FCFA` : 'montant libre';
+      const deadlineLabel = created.deadline ? `, à régler avant le ${created.deadline.toLocaleDateString('fr-FR')}` : '';
+      await this.notifyContributionMembers(
+        created,
+        'Nouvelle cotisation exceptionnelle',
+        `« ${created.name} » : ${amountLabel}${deadlineLabel}.`,
+      );
+    }
+    return created;
+  }
+
+  private async createRecord(dto: CreateContributionDto) {
     const amount = dto.amount != null ? new Prisma.Decimal(dto.amount) : null;
     const targetAmount = dto.targetAmount != null ? new Prisma.Decimal(dto.targetAmount) : null;
     return this.prisma.contribution.create({
@@ -856,9 +886,17 @@ export class ContributionsService {
     if (contribution.status === 'CLOSED_DELIVERED') {
       throw new BadRequestException('Cette cotisation est déjà clôturée et remise.');
     }
-    return this.prisma.contribution.update({
+    const updated = await this.prisma.contribution.update({
       where: { id },
       data: { status },
     });
+    await this.notifyContributionMembers(
+      updated,
+      'Cotisation exceptionnelle clôturée',
+      status === 'CLOSED_DELIVERED'
+        ? `La cotisation « ${updated.name} » est clôturée et le montant collecté a été remis.`
+        : `La cotisation « ${updated.name} » est clôturée.`,
+    );
+    return updated;
   }
 }

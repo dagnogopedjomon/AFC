@@ -94,7 +94,15 @@ export class AdministrationService {
     const fine = await this.prisma.fine.findUnique({ where: { id } });
     if (!fine) throw new NotFoundException('Amende introuvable.');
     if (fine.status === FineStatus.PAID) throw new BadRequestException('Une amende encaissée doit être corrigée par une écriture comptable.');
-    return this.prisma.fine.update({ where: { id }, data: { status: FineStatus.CANCELLED, cancelledAt: new Date() } });
+    const cancelled = await this.prisma.fine.update({ where: { id }, data: { status: FineStatus.CANCELLED, cancelledAt: new Date() } });
+    await this.prisma.inAppNotification.create({
+      data: {
+        memberId: fine.memberId,
+        title: 'Amende annulée',
+        message: `Votre amende de ${Number(fine.amount).toLocaleString('fr-FR')} FCFA (${fine.reason}) a été annulée.`,
+      },
+    });
+    return cancelled;
   }
 
   listExemptions(memberId?: string, year?: number) {
