@@ -11,6 +11,7 @@ import { UpdateContributionDto } from './dto/update-contribution.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { MembersService } from '../members/members.service';
 import { RecordAdvancePaymentDto } from './dto/record-advance-payment.dto';
+import { getPeriodsToCover } from './advance-periods';
 
 const DEADLINE_DAY = 10; // Échéance le 10 du mois
 
@@ -21,22 +22,14 @@ export class ContributionsService {
     private readonly membersService: MembersService,
   ) {}
 
-  private async getNextUnpaidPeriods(memberId: string, contributionId: string, count: number, tx: Prisma.TransactionClient | PrismaService = this.prisma) {
-    const existing = await tx.payment.findMany({
-      where: { memberId, contributionId, cancelledAt: null, periodYear: { not: null }, periodMonth: { not: null } },
-      select: { periodYear: true, periodMonth: true },
-    });
-    const paid = new Set(existing.map((row) => `${row.periodYear}-${row.periodMonth}`));
-    const periods: Array<{ year: number; month: number }> = [];
-    const cursor = new Date();
-    cursor.setDate(1);
-    for (let i = 0; periods.length < count && i < 36; i++) {
-      const year = cursor.getFullYear();
-      const month = cursor.getMonth() + 1;
-      if (!paid.has(`${year}-${month}`)) periods.push({ year, month });
-      cursor.setMonth(cursor.getMonth() + 1);
-    }
-    return periods;
+  private getNextUnpaidPeriods(memberId: string, contributionId: string, count: number, tx: Prisma.TransactionClient | PrismaService = this.prisma) {
+    return getPeriodsToCover(tx, memberId, contributionId, count);
+  }
+
+  /** Périodes qu'un paiement de N mois couvrirait pour ce membre (aperçu avant validation). */
+  async previewAdvancePeriods(memberId: string, months: number) {
+    const monthly = await this.findMonthlyContribution();
+    return getPeriodsToCover(this.prisma, memberId, monthly.id, months);
   }
 
   /** Notifie (in-app) les membres concernés par une cotisation : les ciblés, sinon tous les membres actifs. */

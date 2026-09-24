@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 import { normalizeE164 } from '../notifications/sayelesend.util';
 import { ContributionType, FineStatus, Prisma, RegularizationStatus } from '@prisma/client';
+import { getPeriodsToCover } from './advance-periods';
 
 const JEKO_BASE = 'https://api.jeko.africa/partner_api';
 
@@ -487,20 +488,7 @@ export class JekoService {
       }
 
       if (context.advanceMonths && contribution?.type === ContributionType.MONTHLY && contribution.amount) {
-        const existing = await tx.payment.findMany({
-          where: { memberId: context.memberId, contributionId: contributionId, cancelledAt: null, periodYear: { not: null }, periodMonth: { not: null } },
-          select: { periodYear: true, periodMonth: true },
-        });
-        const paid = new Set(existing.map((row) => `${row.periodYear}-${row.periodMonth}`));
-        const periods: Array<{ year: number; month: number }> = [];
-        const cursor = new Date();
-        cursor.setDate(1);
-        for (let i = 0; periods.length < context.advanceMonths && i < 36; i++) {
-          const year = cursor.getFullYear();
-          const month = cursor.getMonth() + 1;
-          if (!paid.has(`${year}-${month}`)) periods.push({ year, month });
-          cursor.setMonth(cursor.getMonth() + 1);
-        }
+        const periods = await getPeriodsToCover(tx, context.memberId, contributionId, context.advanceMonths);
         if (periods.length !== context.advanceMonths) throw new BadRequestException('Impossible d’affecter tous les mois anticipés.');
         const monthlyAmount = Number(contribution.amount);
         if (context.amountFcfa !== monthlyAmount * periods.length) throw new BadRequestException('Le montant du paiement anticipé est invalide.');

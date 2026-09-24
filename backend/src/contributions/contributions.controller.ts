@@ -198,6 +198,13 @@ export class ContributionsController {
     return this.contributionsService.recordPayment(dto);
   }
 
+  @Get('payments/advance/preview')
+  @UseGuards(ProfileCompletedGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  previewAdvance(@Query('memberId') memberId: string, @Query('months') months: string) {
+    return this.contributionsService.previewAdvancePeriods(memberId, Math.min(Math.max(parseInt(months, 10) || 1, 1), 12));
+  }
+
   @Post('payments/advance/external')
   @UseGuards(ProfileCompletedGuard, RolesGuard)
   @Roles(Role.ADMIN)
