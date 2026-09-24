@@ -28,6 +28,28 @@ export class SuspensionsScheduler {
     }
   }
 
+  /** Rappels d'échéance : le 7 (3 jours avant) et le 10 (jour même) à 08:00, pour les membres qui n'ont pas payé le mois en cours. */
+  @Cron('0 8 7,10 * *')
+  async handleDueDateReminders() {
+    try {
+      const now = new Date();
+      const { members } = await this.contributionsService.getMembersInArrears(now.getFullYear(), now.getMonth() + 1);
+      if (members.length === 0) return;
+      const monthLabel = now.toLocaleString('fr-FR', { month: 'long', year: 'numeric' });
+      const lastDay = now.getDate() === 10;
+      await this.notifications.createInAppBulk(
+        members.map((m) => m.id),
+        lastDay
+          ? `Dernier jour pour régler votre cotisation de ${monthLabel}. Passé ce délai, votre compte sera suspendu.`
+          : `Votre cotisation de ${monthLabel} est à régler avant le 10 pour éviter la suspension de votre compte.`,
+        lastDay ? 'Échéance aujourd’hui' : 'Cotisation à régler',
+      );
+      console.log(`[Scheduler] Rappels d'échéance envoyés: ${members.length} membre(s)`);
+    } catch (err) {
+      console.error('[Scheduler] Erreur rappels d\'échéance:', err);
+    }
+  }
+
   /** Appliquer les suspensions chaque jour à 00:05 (après le 10, membres sans paiement du mois → suspendus). */
   @Cron('5 0 * * *')
   async handleDailySuspensions() {
