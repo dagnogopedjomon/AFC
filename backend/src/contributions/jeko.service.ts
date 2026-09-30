@@ -660,7 +660,21 @@ export class JekoService {
   }
 
   private async validateRegularizationPayment(params: { regularizationAgreementId?: string; memberId: string; contributionId: string; amountFcfa: number }) {
-    if (!params.regularizationAgreementId) return;
+    if (!params.regularizationAgreementId) {
+      // Un paiement générique (hors accord) ne doit pas passer à côté d'un accord de régularisation actif :
+      // il ne mettrait pas à jour son solde, laissant croire à tort que la dette négociée a baissé.
+      const activeAgreement = await this.prisma.regularizationAgreement.findFirst({
+        where: {
+          memberId: params.memberId,
+          contributionId: params.contributionId,
+          status: { in: [RegularizationStatus.PENDING, RegularizationStatus.PARTIALLY_PAID, RegularizationStatus.OVERDUE] },
+        },
+      });
+      if (activeAgreement) {
+        throw new BadRequestException('Ce membre a un accord de régularisation actif : utilisez le paiement de la page Régulariser pour que le solde de l’accord soit mis à jour.');
+      }
+      return;
+    }
     const agreement = await this.prisma.regularizationAgreement.findUnique({ where: { id: params.regularizationAgreementId } });
     if (!agreement || agreement.memberId !== params.memberId || agreement.contributionId !== params.contributionId) {
       throw new BadRequestException('Accord de régularisation invalide.');

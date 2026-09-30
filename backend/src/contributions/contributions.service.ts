@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ContributionType, Prisma, Role } from '@prisma/client';
+import { ContributionType, Prisma, RegularizationStatus, Role } from '@prisma/client';
 import { CreateContributionDto } from './dto/create-contribution.dto';
 import { UpdateContributionDto } from './dto/update-contribution.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
@@ -30,6 +30,23 @@ export class ContributionsService {
   async previewAdvancePeriods(memberId: string, months: number) {
     const monthly = await this.findMonthlyContribution();
     return getPeriodsToCover(this.prisma, memberId, monthly.id, months);
+  }
+
+  /**
+   * Un paiement générique (hors accord) ne doit pas passer à côté d'un accord de régularisation actif :
+   * il ne mettrait pas à jour son solde, laissant croire à tort que la dette négociée a baissé.
+   */
+  private async assertNoActiveAgreement(memberId: string, contributionId: string) {
+    const activeAgreement = await this.prisma.regularizationAgreement.findFirst({
+      where: {
+        memberId,
+        contributionId,
+        status: { in: [RegularizationStatus.PENDING, RegularizationStatus.PARTIALLY_PAID, RegularizationStatus.OVERDUE] },
+      },
+    });
+    if (activeAgreement) {
+      throw new BadRequestException('Ce membre a un accord de régularisation actif : réglez-le depuis la page Régulariser pour que le solde de l’accord soit mis à jour.');
+    }
   }
 
   /** Notifie (in-app) les membres concernés par une cotisation : les ciblés, sinon tous les membres actifs. */
@@ -175,6 +192,7 @@ export class ContributionsService {
     }
 
     if (contribution.type === ContributionType.MONTHLY) {
+      await this.assertNoActiveAgreement(dto.memberId, dto.contributionId);
       if (dto.periodYear == null || dto.periodMonth == null) {
         throw new BadRequestException('Période (année et mois) requise pour la cotisation mensuelle');
       }
@@ -252,6 +270,7 @@ export class ContributionsService {
     if (!monthly.amount) throw new BadRequestException('Montant mensuel non défini.');
     const member = await this.prisma.member.findUnique({ where: { id: dto.memberId } });
     if (!member) throw new NotFoundException('Membre introuvable.');
+    await this.assertNoActiveAgreement(dto.memberId, monthly.id);
     const monthlyAmount = Number(monthly.amount);
     const expectedAmount = monthlyAmount * dto.months;
     if (dto.amount !== expectedAmount) throw new BadRequestException(`Le montant attendu pour ${dto.months} mois est ${expectedAmount.toLocaleString('fr-FR')} FCFA.`);
