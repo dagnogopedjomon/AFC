@@ -15,7 +15,7 @@ export class NotificationsService {
     private readonly sms: SmsService,
   ) {}
 
-  private isEmailConfigured(): boolean {
+  isEmailConfigured(): boolean {
     return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
   }
 

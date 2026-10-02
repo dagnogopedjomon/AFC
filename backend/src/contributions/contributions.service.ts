@@ -429,14 +429,22 @@ export class ContributionsService {
       })
       .then((rows) => new Set(rows.map((r) => r.memberId)));
 
+    // Les membres sous accord de régularisation actif paient via l'accord : pas de lien générique pour eux.
+    const withAgreement = await this.prisma.regularizationAgreement
+      .findMany({
+        where: { status: { in: [RegularizationStatus.PENDING, RegularizationStatus.PARTIALLY_PAID, RegularizationStatus.OVERDUE] } },
+        select: { memberId: true },
+      })
+      .then((rows) => rows.map((r) => r.memberId));
+
     return this.prisma.member.findMany({
       where: {
-        id: { notIn: [...paidIds] },
+        id: { notIn: [...paidIds, ...withAgreement] },
         profileCompleted: true,
         isSuspended: false,
         role: { not: Role.ADMIN },
       },
-      select: { id: true, firstName: true, lastName: true, phone: true },
+      select: { id: true, firstName: true, lastName: true, phone: true, email: true },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
   }

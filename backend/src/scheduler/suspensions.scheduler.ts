@@ -136,8 +136,15 @@ export class SuspensionsScheduler {
       return;
     }
 
-    // Membres actifs sans paiement ce mois-ci
-    const unpaidMembers = await this.contributionsService.findUnpaidMembersForMonth(year, month, monthly.id);
+    // Les relances SMS sont désactivées : seul l'e-mail porte le lien de paiement. Inutile de créer
+    // une demande Jeko pour un membre sans e-mail (ou si l'e-mail n'est pas configuré).
+    if (!this.notifications.isEmailConfigured()) {
+      this.logger.warn(`[Relance ${tag}] E-mail non configuré et SMS désactivé : relance ignorée.`);
+      return;
+    }
+
+    // Membres actifs sans paiement ce mois-ci, joignables par e-mail
+    const unpaidMembers = (await this.contributionsService.findUnpaidMembersForMonth(year, month, monthly.id)).filter((m) => !!m.email);
     this.logger.log(`[Relance ${tag}] ${unpaidMembers.length} membre(s) impayés pour ${monthLabel}`);
 
     let sent = 0;
