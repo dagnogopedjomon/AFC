@@ -12,6 +12,7 @@ import { RecordPaymentDto } from './dto/record-payment.dto';
 import { MembersService } from '../members/members.service';
 import { RecordAdvancePaymentDto } from './dto/record-advance-payment.dto';
 import { getPeriodsToCover } from './advance-periods';
+import { notifyPaymentValidated } from './payment-notifications';
 
 const DEADLINE_DAY = 10; // Échéance le 10 du mois
 
@@ -252,16 +253,12 @@ export class ContributionsService {
         'Paiement cotisation mensuelle',
       );
     }
-    const periodLabel = dto.periodYear && dto.periodMonth
-      ? ` (${new Date(dto.periodYear, dto.periodMonth - 1).toLocaleString('fr-FR', { month: 'long', year: 'numeric' })})`
-      : '';
-    await this.prisma.inAppNotification.create({
-      data: {
-        memberId: dto.memberId,
-        title: 'Paiement enregistré',
-        message: `Votre paiement de ${dto.amount.toLocaleString('fr-FR')} FCFA pour « ${contribution.name} »${periodLabel} a bien été enregistré.`,
-      },
-    });
+    await notifyPaymentValidated(this.prisma, {
+      memberId: dto.memberId,
+      amountFcfa: dto.amount,
+      periods: dto.periodYear && dto.periodMonth ? [{ year: dto.periodYear, month: dto.periodMonth }] : [],
+      label: contribution.type === ContributionType.MONTHLY ? undefined : `cotisation « ${contribution.name} »`,
+    }).catch(() => undefined);
     return result;
   }
 
@@ -305,13 +302,12 @@ export class ContributionsService {
         'Réactivation automatique après paiement anticipé hors application',
       );
     }
-    await this.prisma.inAppNotification.create({
-      data: {
-        memberId: dto.memberId,
-        title: 'Paiement enregistré',
-        message: `Votre paiement de ${expectedAmount.toLocaleString('fr-FR')} FCFA (${dto.months} mois) a bien été enregistré.`,
-      },
-    });
+    await notifyPaymentValidated(this.prisma, {
+      memberId: dto.memberId,
+      amountFcfa: expectedAmount,
+      periods: result.periods,
+      excludeAdminId: performedById,
+    }).catch(() => undefined);
     return result;
   }
 

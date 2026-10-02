@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { normalizeE164 } from '../notifications/sayelesend.util';
 import { ContributionType, FineStatus, Prisma, RegularizationStatus } from '@prisma/client';
 import { getPeriodsToCover } from './advance-periods';
+import { notifyPaymentValidated } from './payment-notifications';
 
 const JEKO_BASE = 'https://api.jeko.africa/partner_api';
 
@@ -435,7 +436,7 @@ export class JekoService {
 
     const contribution = await this.prisma.contribution.findUnique({
       where: { id: contributionId },
-      select: { type: true, amount: true },
+      select: { type: true, amount: true, name: true },
     });
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -444,7 +445,7 @@ export class JekoService {
       const consumed = await tx.pendingJekoPayment.deleteMany({ where: { reference } });
       if (consumed.count === 0) {
         const existing = await tx.payment.findFirst({ where: { metadata: { contains: reference } } });
-        return { payment: existing ?? {}, paymentsCount: existing ? 1 : 0, reactivated: false };
+        return { payment: existing ?? {}, paymentsCount: existing ? 1 : 0, reactivated: false, fresh: false, periods: [] as Array<{ year: number; month: number }>, label: undefined as string | undefined };
       }
 
       const metadataBase = {
@@ -484,7 +485,7 @@ export class JekoService {
           },
         });
         await tx.member.update({ where: { id: context.memberId }, data: { isSuspended: false, reactivatedAt: null } });
-        return { payment, paymentsCount: 1, reactivated: true };
+        return { payment, paymentsCount: 1, reactivated: true, fresh: true, periods: [] as Array<{ year: number; month: number }>, label: 'tranche de votre accord de régularisation' as string | undefined };
       }
 
       if (context.advanceMonths && contribution?.type === ContributionType.MONTHLY && contribution.amount) {
@@ -505,7 +506,7 @@ export class JekoService {
           where: { id: context.memberId },
           data: { isSuspended: false, reactivatedAt: null },
         });
-        return { payment: { reference, advanceMonths: periods }, paymentsCount: periods.length, reactivated: true };
+        return { payment: { reference, advanceMonths: periods }, paymentsCount: periods.length, reactivated: true, fresh: true, periods, label: undefined as string | undefined };
       }
 
       if (contribution?.type === ContributionType.MONTHLY && contribution.amount) {
@@ -582,7 +583,7 @@ export class JekoService {
             data: { isSuspended: false, reactivatedAt: null },
           });
         }
-        return { payment: { reference, monthsPaid: coveredMonths }, paymentsCount: paymentRows.length, reactivated };
+        return { payment: { reference, monthsPaid: coveredMonths }, paymentsCount: paymentRows.length, reactivated, fresh: true, periods: coveredMonths, label: undefined as string | undefined };
       }
 
       const payment = await tx.payment.create({
@@ -596,17 +597,20 @@ export class JekoService {
           metadata: JSON.stringify(metadataBase),
         },
       });
-      return { payment, paymentsCount: 1, reactivated: false };
+      return {
+        payment, paymentsCount: 1, reactivated: false, fresh: true,
+        periods: context.periodYear && context.periodMonth ? [{ year: context.periodYear, month: context.periodMonth }] : ([] as Array<{ year: number; month: number }>),
+        label: contribution?.type === ContributionType.MONTHLY ? undefined : `cotisation « ${contribution?.name ?? 'exceptionnelle'} »`,
+      };
     });
 
     this.logger.log(`[Jeko] ${result.paymentsCount} paiement(s) enregistré(s), réactivation=${result.reactivated}`);
-    if (result.paymentsCount > 0) {
-      await this.prisma.inAppNotification.create({
-        data: {
-          memberId: context.memberId,
-          title: 'Paiement enregistré',
-          message: `Votre paiement de ${context.amountFcfa.toLocaleString('fr-FR')} FCFA a bien été reçu.`,
-        },
+    if (result.fresh && result.paymentsCount > 0) {
+      await notifyPaymentValidated(this.prisma, {
+        memberId: context.memberId,
+        amountFcfa: context.amountFcfa,
+        periods: result.periods,
+        label: result.label,
       }).catch(() => undefined);
     }
     return { paid: result.paymentsCount > 0, payment: result.payment };

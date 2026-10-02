@@ -110,11 +110,12 @@ export class NotificationsService {
 
     const amount = params.amountFcfa.toLocaleString('fr-FR');
     const period = params.periodLabel ? ` pour ${params.periodLabel}` : '';
-    const smsText = `AFC - Bonjour ${member.firstName}, votre paiement${period} de ${amount} FCFA a bien été reçu. Merci ! — Amicale AFC`;
-
-    if (this.sms.isConfigured()) {
-      await this.sms.send(member.phone, smsText);
-    }
+    // SMS de confirmation désactivé (économie du stock de SMS) : remplacé par les notifications in-app
+    // envoyées à l'enregistrement du paiement (voir payment-notifications.ts). À réactiver si besoin.
+    // const smsText = `AFC - Bonjour ${member.firstName}, votre paiement${period} de ${amount} FCFA a bien été reçu. Merci ! — Amicale AFC`;
+    // if (this.sms.isConfigured()) {
+    //   await this.sms.send(member.phone, smsText);
+    // }
 
     if (member.email && this.isEmailConfigured()) {
       const html = `
