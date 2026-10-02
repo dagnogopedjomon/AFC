@@ -15,7 +15,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 
 const SALT_ROUNDS = 10;
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3001';
+/** Première URL de FRONTEND_URL (la variable peut contenir plusieurs adresses séparées par des virgules, pour le CORS). */
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3001').split(',')[0].trim().replace(/\/$/, '');
 
 @Injectable()
 export class MembersService {
