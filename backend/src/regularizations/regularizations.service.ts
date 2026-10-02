@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ContributionsService } from '../contributions/contributions.service';
 import { MembersService } from '../members/members.service';
 import { CreateRegularizationDto } from './dto/create-regularization.dto';
+import { UpdateRegularizationDto } from './dto/update-regularization.dto';
 
 const ACTIVE_STATUSES: RegularizationStatus[] = [
   RegularizationStatus.PENDING,
@@ -118,6 +119,57 @@ export class RegularizationsService {
       where: { memberId, status: { in: ACTIVE_STATUSES } }, orderBy: { createdAt: 'desc' },
     });
     return row ? this.serialize(row) : null;
+  }
+
+  /** Modifier un accord actif (montant négocié, première tranche, échéance, note). Le type d'accord ne change pas : annuler puis recréer. */
+  async update(id: string, dto: UpdateRegularizationDto, performedById: string) {
+    const agreement = await this.prisma.regularizationAgreement.findUnique({ where: { id } });
+    if (!agreement) throw new NotFoundException('Accord introuvable.');
+    if (!ACTIVE_STATUSES.includes(agreement.status)) throw new BadRequestException('Cet accord ne peut plus être modifié.');
+
+    const paid = Number(agreement.paidAmount);
+    const original = Number(agreement.originalAmount);
+    const isSettlement = agreement.mode === RegularizationMode.SETTLEMENT;
+    const agreed = dto.agreedAmount ?? Number(agreement.agreedAmount);
+    const initial = isSettlement ? agreed : dto.initialAmount ?? Number(agreement.initialAmount);
+
+    if (agreed > original) throw new BadRequestException('Le montant négocié ne peut pas dépasser la dette initiale.');
+    if (paid > 0 && agreed <= paid) throw new BadRequestException('Le montant négocié doit rester supérieur à ce que le membre a déjà payé.');
+    if (paid > 0 && dto.initialAmount !== undefined && dto.initialAmount !== Number(agreement.initialAmount)) {
+      throw new BadRequestException('La première tranche a déjà été versée : elle ne peut plus être modifiée.');
+    }
+    if (initial > agreed) throw new BadRequestException('La première tranche ne peut pas dépasser le montant négocié.');
+    if (dto.deadline !== undefined && new Date(dto.deadline) <= new Date()) throw new BadRequestException('L’échéance doit être dans le futur.');
+
+    const newDeadline = dto.deadline !== undefined ? new Date(dto.deadline) : agreement.deadline;
+    const reopened = agreement.status === RegularizationStatus.OVERDUE && newDeadline != null && newDeadline > new Date();
+
+    const updated = await this.prisma.regularizationAgreement.update({
+      where: { id },
+      data: {
+        agreedAmount: new Prisma.Decimal(agreed),
+        initialAmount: new Prisma.Decimal(initial),
+        discountAmount: new Prisma.Decimal(original - agreed),
+        deadline: newDeadline,
+        ...(dto.notes !== undefined && { notes: dto.notes.trim() || null }),
+        ...(reopened && { status: paid > 0 ? RegularizationStatus.PARTIALLY_PAID : RegularizationStatus.PENDING }),
+      },
+      include: { member: { select: { id: true, firstName: true, lastName: true, phone: true, isSuspended: true } }, createdBy: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    await this.members.logAudit(agreement.memberId, 'REGULARIZATION_UPDATED', performedById, JSON.stringify({
+      agreementId: id,
+      before: { agreedAmount: Number(agreement.agreedAmount), initialAmount: Number(agreement.initialAmount), deadline: agreement.deadline },
+      after: { agreedAmount: agreed, initialAmount: initial, deadline: newDeadline },
+    }));
+    const deadlineLabel = newDeadline ? ` avant le ${newDeadline.toLocaleDateString('fr-FR')}` : '';
+    await this.prisma.inAppNotification.create({
+      data: {
+        memberId: agreement.memberId,
+        title: 'Accord de régularisation modifié',
+        message: `Votre accord a été mis à jour : ${agreed.toLocaleString('fr-FR')} FCFA au total, solde de ${Math.max(0, agreed - paid).toLocaleString('fr-FR')} FCFA à régler${deadlineLabel}.`,
+      },
+    });
+    return this.serialize(updated);
   }
 
   async cancel(id: string, performedById: string) {

@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import type { RequestUser } from '../auth/jwt.strategy';
 import { CreateRegularizationDto } from './dto/create-regularization.dto';
+import { UpdateRegularizationDto } from './dto/update-regularization.dto';
 import { RegularizationsService } from './regularizations.service';
 
 @Controller('regularizations')
@@ -32,6 +33,11 @@ export class RegularizationsController {
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
   create(@Body() dto: CreateRegularizationDto, @Req() req: { user: RequestUser }) { return this.service.create(dto, req.user.id); }
+
+  @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  update(@Param('id') id: string, @Body() dto: UpdateRegularizationDto, @Req() req: { user: RequestUser }) { return this.service.update(id, dto, req.user.id); }
 
   @Post(':id/cancel')
   @UseGuards(RolesGuard)
