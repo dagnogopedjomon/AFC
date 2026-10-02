@@ -58,16 +58,17 @@ export class NotificationsService {
     if (!member) return;
 
     const amount = params.amountFcfa.toLocaleString('fr-FR');
-    const smsText =
-      `AFC - Bonjour ${member.firstName}, votre cotisation ${params.periodLabel} (${amount} FCFA) est due.\n` +
-      `Payez maintenant : ${params.redirectUrl}\n— Amicale AFC`;
+    // const smsText =
+    //   `AFC - Bonjour ${member.firstName}, votre cotisation ${params.periodLabel} (${amount} FCFA) est due.\n` +
+    //   `Payez maintenant : ${params.redirectUrl}\n— Amicale AFC`;
 
-    // SMS
-    let smsSent = false;
-    if (this.sms.isConfigured()) {
-      const r = await this.sms.send(member.phone, smsText);
-      smsSent = !!r?.messageId;
-    }
+    // SMS désactivé (économie du stock de SMS). À réactiver si besoin.
+    const smsSent = false;
+    // let smsSent = false;
+    // if (this.sms.isConfigured()) {
+    //   const r = await this.sms.send(member.phone, smsText);
+    //   smsSent = !!r?.messageId;
+    // }
 
     // Email
     let emailSent = false;
@@ -155,23 +156,25 @@ export class NotificationsService {
       select: { phone: true, firstName: true, lastName: true },
     });
     if (!member) throw new NotFoundException('Membre introuvable');
-    const text = `Bonjour ${member.firstName},\n\nRappel : votre cotisation pour ${periodLabel} est attendue. Merci de régler au plus tôt via l'application AFC.\n\n— Amicale AFC`;
-    let smsSent = false;
-    if (this.sms.isConfigured()) {
-      const result = await this.sms.send(member.phone, text);
-      smsSent = result != null && !!result.messageId;
-    }
+    // SMS désactivé (économie du stock de SMS) : le rappel manuel passe par une notification in-app. À réactiver si besoin.
+    // const text = `Bonjour ${member.firstName},\n\nRappel : votre cotisation pour ${periodLabel} est attendue. Merci de régler au plus tôt via l'application AFC.\n\n— Amicale AFC`;
+    // let smsSent = false;
+    // if (this.sms.isConfigured()) {
+    //   const result = await this.sms.send(member.phone, text);
+    //   smsSent = result != null && !!result.messageId;
+    // }
+    await this.createInApp(
+      memberId,
+      `Votre cotisation pour ${periodLabel} est attendue. Merci de la régler au plus tôt depuis l'application.`,
+      'Rappel de cotisation',
+    );
     await this.log(memberId, NotificationChannel.SMS, 'RAPPEL_COTISATION', {
       period: periodLabel,
       sentAt: new Date().toISOString(),
-      smsSent,
+      smsSent: false,
+      inApp: true,
     });
-    return {
-      ok: true,
-      message: this.sms.isConfigured()
-        ? (smsSent ? 'Rappel envoyé par SMS.' : 'Envoi SMS échoué, log enregistré.')
-        : 'Rappel enregistré (SMS non configuré).',
-    };
+    return { ok: true, message: 'Rappel envoyé au membre (notification dans l\'application).' };
   }
 
   async sendPaymentConfirmation(memberId: string, amount: number, periodLabel: string) {
