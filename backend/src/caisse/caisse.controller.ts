@@ -102,7 +102,7 @@ export class CaisseController {
 
   @Patch('expenses/:id/validate-commissioner')
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN, Role.COMMISSIONER)
+  @Roles(Role.COMMISSIONER)
   validateByCommissioner(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     return this.caisseService.validateByCommissioner(id, user.id);
   }
@@ -150,7 +150,7 @@ export class CaisseController {
 
   @Patch('transfers/:id/validate-commissioner')
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN, Role.COMMISSIONER)
+  @Roles(Role.COMMISSIONER)
   validateTransferByCommissioner(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     return this.caisseService.validateTransferByCommissioner(id, user.id);
   }

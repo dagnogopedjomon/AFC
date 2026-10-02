@@ -437,6 +437,13 @@ export class CaisseService {
     return e;
   }
 
+  /** Séparation des rôles : le commissaire ne peut être ni le demandeur ni le validateur trésorier de la même opération. */
+  private assertIndependentCommissioner(op: { requestedById: string; treasurerApprovedById: string | null }, userId: string) {
+    if (op.requestedById === userId || op.treasurerApprovedById === userId) {
+      throw new ForbiddenException('Le commissaire aux comptes doit être une personne différente du demandeur et du trésorier qui a validé.');
+    }
+  }
+
   async validateByTreasurer(expenseId: string, userId: string) {
     const expense = await this.findOneExpense(expenseId);
     if (expense.status !== ExpenseStatus.PENDING_TREASURER) {
@@ -462,6 +469,7 @@ export class CaisseService {
     if (expense.status !== ExpenseStatus.PENDING_COMMISSIONER) {
       throw new BadRequestException('Cette dépense n’est pas en attente de validation par le commissaire.');
     }
+    this.assertIndependentCommissioner(expense, userId);
     const cashBoxId = expense.cashBoxId ?? (await this.getDefaultCashBoxId());
     const balance = await this.getCashBoxBalance(cashBoxId);
     if (Number(expense.amount) > balance) {
@@ -597,6 +605,7 @@ export class CaisseService {
     if (t.status !== ExpenseStatus.PENDING_COMMISSIONER) {
       throw new BadRequestException('Ce transfert n’est pas en attente de validation par le commissaire.');
     }
+    this.assertIndependentCommissioner(t, userId);
     return this.prisma.cashBoxTransfer.update({
       where: { id: transferId },
       data: {
