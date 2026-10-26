@@ -1,7 +1,13 @@
 // Lot 1 du module « Publications » : publication des événements sur le site public.
 // Ajoute le statut de publication, le lieu, l'adresse courte et la couverture sur Activity,
 // ainsi que la visibilité et l'ordre sur Photo. Le script est rejouable sans risque.
-// Usage sur le serveur : node -r dotenv/config scripts/apply-publications-migration.js
+// Usage : node -r dotenv/config scripts/apply-publications-migration.js
+//
+// Si la connexion échoue avec « self-signed certificate in certificate chain »
+// (Supabase présente un certificat signé par sa propre autorité), appliquez
+// plutôt le même SQL par Prisma, qui connaît ce certificat :
+//   npx prisma db execute --schema prisma/schema.prisma \
+//     --file prisma/sql/20261026_publications_lot1.sql
 const { Pool } = require('pg');
 
 const sql = `
