@@ -20,6 +20,9 @@ import { CreateActivityDto } from './dto/create-activity.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { CreatePhotoDto } from './dto/create-photo.dto';
+import { PublishActivityDto } from './dto/publish-activity.dto';
+import { UpdatePhotoDto } from './dto/update-photo.dto';
+import { UpdateAlbumDto } from './dto/update-album.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ProfileCompletedGuard } from '../auth/profile-completed.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -28,6 +31,19 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Role } from '@prisma/client';
 import type { RequestUser } from '../auth/jwt.strategy';
 import { SupabaseService } from '../supabase/supabase.service';
+
+/** Images acceptées pour les albums : 5 Mo au plus (cahier des charges, section 9). */
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** Vérification du type sur le contenu du fichier, pas seulement sur l'extension. */
+function sniffImageType(buffer: Buffer): string | null {
+  if (buffer.length < 12) return null;
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  return null;
+}
 
 const BUREAU_OR_ADMIN: Role[] = [
   Role.ADMIN,
@@ -112,10 +128,10 @@ export class ActivitiesController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: multer.memoryStorage ? multer.memoryStorage() : undefined,
-      limits: { fileSize: 10 * 1024 * 1024 },
+      limits: { fileSize: 5 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        if (!file.mimetype.startsWith('image/')) {
-          cb(new Error('Seules les images sont acceptées'), false);
+        if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
+          cb(new Error('Formats acceptés : JPEG, PNG ou WebP.'), false);
           return;
         }
         cb(null, true);
@@ -130,6 +146,13 @@ export class ActivitiesController {
   ) {
     if (!file) throw new BadRequestException('Aucun fichier envoyé');
     if (!activityId) throw new BadRequestException('activityId requis');
+    if (file.size > MAX_IMAGE_BYTES) {
+      throw new BadRequestException('Image trop lourde : 5 Mo au maximum.');
+    }
+    const sniffed = sniffImageType(file.buffer);
+    if (!sniffed || !ALLOWED_IMAGE_TYPES.includes(sniffed)) {
+      throw new BadRequestException('Formats acceptés : JPEG, PNG ou WebP.');
+    }
 
     let url: string;
     if (this.supabase.isConfigured()) {
@@ -153,6 +176,43 @@ export class ActivitiesController {
       { url, caption: caption?.trim(), activityId },
       user.id,
     );
+  }
+
+  /** Publier, retirer ou archiver un événement sur le site public. */
+  @Patch(':id/publication')
+  @UseGuards(RolesGuard)
+  @Roles(...BUREAU_OR_ADMIN)
+  setPublication(
+    @Param('id') id: string,
+    @Body() dto: PublishActivityDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.activitiesService.setPublication(id, dto, user.id);
+  }
+
+  /** Visibilité de l'album sur le site et photo de couverture. */
+  @Patch(':id/album')
+  @UseGuards(RolesGuard)
+  @Roles(...BUREAU_OR_ADMIN)
+  updateAlbum(@Param('id') id: string, @Body() dto: UpdateAlbumDto) {
+    return this.activitiesService.updateAlbum(id, dto);
+  }
+
+  /** Nouvel ordre des photos de l'album. */
+  @Patch(':id/album/order')
+  @UseGuards(RolesGuard)
+  @Roles(...BUREAU_OR_ADMIN)
+  reorderPhotos(@Param('id') id: string, @Body('photoIds') photoIds: string[]) {
+    if (!Array.isArray(photoIds)) throw new BadRequestException('photoIds requis');
+    return this.activitiesService.reorderPhotos(id, photoIds);
+  }
+
+  /** Légende, visibilité ou position d'une photo. */
+  @Patch('photos/:id')
+  @UseGuards(RolesGuard)
+  @Roles(...BUREAU_OR_ADMIN)
+  updatePhoto(@Param('id') id: string, @Body() dto: UpdatePhotoDto) {
+    return this.activitiesService.updatePhoto(id, dto);
   }
 
   @Delete('photos/:id')

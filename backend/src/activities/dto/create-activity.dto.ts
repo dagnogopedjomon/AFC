@@ -24,4 +24,9 @@ export class CreateActivityDto {
   @IsOptional()
   @IsString()
   result?: string;
+
+  /** Lieu affiché sur le site public. */
+  @IsOptional()
+  @IsString()
+  location?: string;
 }

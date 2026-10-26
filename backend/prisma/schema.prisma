@@ -62,6 +62,13 @@ enum ActivityType {
   OTHER
 }
 
+/// Brouillon, publié ou archivé — pour les contenus repris par le site public.
+enum PublicationStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 enum NotificationChannel {
   WHATSAPP
   SMS
@@ -490,6 +497,18 @@ model Activity {
   endDate     DateTime?
   result      String?  // Pour les matchs : score, résultat
   photos      Photo[]
+
+  // ——— Publication sur le site public (lot 1 du module Publications) ———
+  /// Lieu affiché sur le site (« Terrain de five, Cocody »).
+  location          String?
+  /// Adresse courte tirée du titre, unique ; servie par /public/evenements.
+  slug              String?           @unique
+  publicationStatus PublicationStatus @default(DRAFT)
+  publishedAt       DateTime?
+  /// L'album n'est repris sur le site que si le bureau l'autorise.
+  albumVisible      Boolean           @default(false)
+  /// Photo de couverture (identifiant d'une photo de l'album).
+  coverPhotoId      String?
 }
 
 model Photo {
@@ -498,6 +517,10 @@ model Photo {
 
   url        String
   caption    String?
+  /// Une photo masquée reste dans l'album interne mais n'est pas publiée.
+  visible    Boolean  @default(true)
+  /// Ordre d'affichage dans l'album.
+  position   Int      @default(0)
   activityId String?
   activity   Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
   uploadedById String
