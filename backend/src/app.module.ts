@@ -12,6 +12,7 @@ import { ReportsModule } from './reports/reports.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { PublicModule } from './public/public.module';
+import { DocumentsModule } from './documents/documents.module';
 import { SiteRebuildModule } from './public/site-rebuild.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { HealthModule } from './health/health.module';
@@ -37,6 +38,7 @@ import { AdministrationModule } from './administration/administration.module';
     ActivitiesModule,
     SiteRebuildModule,
     PublicModule,
+    DocumentsModule,
     NotificationsModule,
     HealthModule,
     SupabaseModule,

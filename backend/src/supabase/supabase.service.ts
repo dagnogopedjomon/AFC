@@ -52,6 +52,37 @@ export class SupabaseService {
   }
 
   /**
+   * Dépose un document du club et retourne l'URL publique.
+   * Chemin: documents/{documentId}/{nom-nettoyé}
+   * Le nom d'origine est conservé parce qu'il sert de nom de téléchargement.
+   */
+  async uploadDocument(
+    buffer: Buffer,
+    mimetype: string,
+    documentId: string,
+    filename: string,
+  ): Promise<string> {
+    if (!this.client) {
+      throw new Error('Supabase non configuré (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
+    }
+    const path = `documents/${documentId}/${filename}`;
+
+    const { error } = await this.client.storage
+      .from(this.bucket)
+      .upload(path, buffer, {
+        contentType: mimetype,
+        upsert: true,
+      });
+
+    if (error) {
+      throw new Error(`Upload Supabase: ${error.message}`);
+    }
+
+    const { data } = this.client.storage.from(this.bucket).getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  /**
    * Upload une photo d'activité et retourne l'URL publique.
    * Chemin: activities/{activityId}/{timestamp}-{random}.{ext}
    * Utilise le bucket 'avatars' existant pour éviter la création d'un nouveau bucket.

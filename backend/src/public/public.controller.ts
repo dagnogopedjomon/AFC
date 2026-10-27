@@ -1,5 +1,6 @@
 import { Controller, Get, NotFoundException, Param, Query } from '@nestjs/common';
 import { ActivitiesService } from '../activities/activities.service';
+import { DocumentsService } from '../documents/documents.service';
 import { Public } from '../auth/public.decorator';
 
 /**
@@ -13,7 +14,10 @@ import { Public } from '../auth/public.decorator';
 @Controller(['api/public', 'public'])
 @Public()
 export class PublicController {
-  constructor(private readonly activities: ActivitiesService) {}
+  constructor(
+    private readonly activities: ActivitiesService,
+    private readonly documents: DocumentsService,
+  ) {}
 
   /** Événements publiés, du plus proche au plus ancien. */
   @Get('evenements')
@@ -42,9 +46,9 @@ export class PublicController {
     throw new NotFoundException(`Article « ${slug} » introuvable`);
   }
 
-  /** Documents publiés — lot 2, même principe que les articles. */
+  /** Documents publiés, classés par date, avec leur adresse de téléchargement. */
   @Get('documents')
-  documents() {
-    return [];
+  documentsPublies() {
+    return this.documents.findPublicDocuments();
   }
 }
