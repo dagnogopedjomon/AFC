@@ -19,13 +19,20 @@ export class SiteRebuildService {
   private pending: NodeJS.Timeout | null = null;
 
   isConfigured(): boolean {
-    return !!process.env.SITE_REBUILD_HOOK_URL?.trim();
+    return !!(process.env.SITE_REBUILD_HOOK_URL?.trim() || this.dispatchConfigured());
+  }
+
+  private dispatchConfigured(): boolean {
+    return !!(
+      process.env.SITE_REBUILD_DISPATCH_URL?.trim() &&
+      process.env.SITE_REBUILD_DISPATCH_TOKEN?.trim()
+    );
   }
 
   /** Demande une reconstruction du site, au plus une toutes les 30 secondes. */
   request(reason: string): void {
     if (!this.isConfigured()) {
-      this.logger.debug(`Reconstruction non configurée (SITE_REBUILD_HOOK_URL absent) — ${reason}`);
+      this.logger.debug(`Reconstruction non configurée (aucune destination) — ${reason}`);
       return;
     }
     if (this.pending) return;
@@ -38,19 +45,46 @@ export class SiteRebuildService {
   }
 
   private async trigger(reason: string): Promise<void> {
-    const url = process.env.SITE_REBUILD_HOOK_URL!.trim();
+    const hook = process.env.SITE_REBUILD_HOOK_URL?.trim();
+    if (hook) {
+      await this.post('hébergeur', hook, reason);
+    }
+    if (this.dispatchConfigured()) {
+      await this.post(
+        'dépôt automatique',
+        process.env.SITE_REBUILD_DISPATCH_URL!.trim(),
+        reason,
+        {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${process.env.SITE_REBUILD_DISPATCH_TOKEN!.trim()}`,
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        JSON.stringify({ event_type: 'publication' }),
+      );
+    }
+  }
+
+  /** Un appel borné dans le temps, dont l'échec ne remonte jamais à l'appelant. */
+  private async post(
+    cible: string,
+    url: string,
+    reason: string,
+    headers?: Record<string, string>,
+    body?: string,
+  ): Promise<void> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
-      const response = await fetch(url, { method: 'POST', signal: controller.signal });
+      const response = await fetch(url, { method: 'POST', headers, body, signal: controller.signal });
       if (response.ok) {
-        this.logger.log(`Reconstruction du site public demandée (${reason}).`);
+        this.logger.log(`Reconstruction demandée au ${cible} (${reason}).`);
       } else {
-        this.logger.warn(`Reconstruction refusée par l'hébergeur : HTTP ${response.status}.`);
+        this.logger.warn(`Reconstruction refusée par le ${cible} : HTTP ${response.status}.`);
       }
     } catch (err) {
       this.logger.warn(
-        `Reconstruction du site impossible : ${err instanceof Error ? err.message : 'erreur réseau'}.`,
+        `Reconstruction impossible au ${cible} : ${err instanceof Error ? err.message : 'erreur réseau'}.`,
       );
     } finally {
       clearTimeout(timeout);
