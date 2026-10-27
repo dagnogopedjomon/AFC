@@ -8,6 +8,7 @@ import { PublishActivityDto } from './dto/publish-activity.dto';
 import { UpdatePhotoDto } from './dto/update-photo.dto';
 import { UpdateAlbumDto } from './dto/update-album.dto';
 import { PublicationStatus } from '@prisma/client';
+import { SiteRebuildService } from '../public/site-rebuild.service';
 
 /** Les adresses d'images renvoyées au site public doivent être absolues. */
 function absoluteUrl(url: string): string {
@@ -29,7 +30,10 @@ function slugify(value: string): string {
 
 @Injectable()
 export class ActivitiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly siteRebuild: SiteRebuildService,
+  ) {}
 
   async createActivity(dto: CreateActivityDto) {
     return this.prisma.activity.create({
@@ -91,6 +95,7 @@ export class ActivitiesService {
 
   async updateActivity(id: string, dto: UpdateActivityDto) {
     const a = await this.findOneActivity(id);
+    this.requestRebuildIfPublished(a);
     return this.prisma.activity.update({
       where: { id },
       data: {
@@ -108,14 +113,19 @@ export class ActivitiesService {
 
   async deleteActivity(id: string) {
     const a = await this.findOneActivity(id);
+    this.requestRebuildIfPublished(a);
     await this.prisma.photo.deleteMany({ where: { activityId: id } });
     await this.prisma.activity.delete({ where: { id } });
     return { success: true };
   }
 
   async deletePhoto(id: string) {
-    const p = await this.prisma.photo.findUnique({ where: { id } });
+    const p = await this.prisma.photo.findUnique({
+      where: { id },
+      include: { activity: { select: { title: true, publicationStatus: true } } },
+    });
     if (!p) throw new NotFoundException('Photo introuvable');
+    if (p.activity) this.requestRebuildIfPublished(p.activity);
     await this.prisma.photo.delete({ where: { id } });
     return { success: true };
   }
@@ -200,6 +210,7 @@ export class ActivitiesService {
     });
 
     await this.logPublication(performedById, dto.status, updated.title);
+    this.siteRebuild.request(`événement « ${updated.title} » → ${dto.status}`);
     return updated;
   }
 
@@ -212,7 +223,7 @@ export class ActivitiesService {
         throw new BadRequestException('Cette photo n’appartient pas à l’événement.');
       }
     }
-    return this.prisma.activity.update({
+    const updated = await this.prisma.activity.update({
       where: { id },
       data: {
         ...(dto.albumVisible !== undefined && { albumVisible: dto.albumVisible }),
@@ -220,12 +231,27 @@ export class ActivitiesService {
       },
       include: { photos: { orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] } },
     });
+    if (updated.publicationStatus === PublicationStatus.PUBLISHED) {
+      this.siteRebuild.request(`album de « ${updated.title} »`);
+    }
+    return updated;
+  }
+
+  /** Une modification de l'événement publié change aussi le site. */
+  private requestRebuildIfPublished(activity: { publicationStatus: PublicationStatus; title: string }) {
+    if (activity.publicationStatus === PublicationStatus.PUBLISHED) {
+      this.siteRebuild.request(`modification de « ${activity.title} »`);
+    }
   }
 
   /** Légende, visibilité ou ordre d'une photo. */
   async updatePhoto(id: string, dto: UpdatePhotoDto) {
-    const photo = await this.prisma.photo.findUnique({ where: { id } });
+    const photo = await this.prisma.photo.findUnique({
+      where: { id },
+      include: { activity: { select: { title: true, publicationStatus: true } } },
+    });
     if (!photo) throw new NotFoundException('Photo introuvable');
+    if (photo.activity) this.requestRebuildIfPublished(photo.activity);
     return this.prisma.photo.update({
       where: { id },
       data: {
@@ -238,7 +264,8 @@ export class ActivitiesService {
 
   /** Nouvel ordre de l'album, dans l'ordre des identifiants reçus. */
   async reorderPhotos(activityId: string, photoIds: string[]) {
-    await this.findOneActivity(activityId);
+    const activity = await this.findOneActivity(activityId);
+    this.requestRebuildIfPublished(activity);
     await this.prisma.$transaction(
       photoIds.map((photoId, index) =>
         this.prisma.photo.updateMany({

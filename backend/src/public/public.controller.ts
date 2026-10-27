@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Query } from '@nestjs/common';
 import { ActivitiesService } from '../activities/activities.service';
 import { Public } from '../auth/public.decorator';
 
@@ -25,5 +25,26 @@ export class PublicController {
   @Get('evenements/:slug')
   evenement(@Param('slug') slug: string) {
     return this.activities.findPublicEventBySlug(slug);
+  }
+
+  /**
+   * Articles publiés. Le module Articles est le lot 3 : la route existe déjà
+   * pour que le générateur du site trouve tout ce qu'il attend, et renvoie une
+   * liste vide en attendant.
+   */
+  @Get('articles')
+  articles() {
+    return [];
+  }
+
+  @Get('articles/:slug')
+  article(@Param('slug') slug: string) {
+    throw new NotFoundException(`Article « ${slug} » introuvable`);
+  }
+
+  /** Documents publiés — lot 2, même principe que les articles. */
+  @Get('documents')
+  documents() {
+    return [];
   }
 }
