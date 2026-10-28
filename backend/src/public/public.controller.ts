@@ -1,5 +1,6 @@
-import { Controller, Get, NotFoundException, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ActivitiesService } from '../activities/activities.service';
+import { ArticlesService } from '../articles/articles.service';
 import { DocumentsService } from '../documents/documents.service';
 import { Public } from '../auth/public.decorator';
 
@@ -16,6 +17,7 @@ import { Public } from '../auth/public.decorator';
 export class PublicController {
   constructor(
     private readonly activities: ActivitiesService,
+    private readonly articles: ArticlesService,
     private readonly documents: DocumentsService,
   ) {}
 
@@ -31,19 +33,16 @@ export class PublicController {
     return this.activities.findPublicEventBySlug(slug);
   }
 
-  /**
-   * Articles publiés. Le module Articles est le lot 3 : la route existe déjà
-   * pour que le générateur du site trouve tout ce qu'il attend, et renvoie une
-   * liste vide en attendant.
-   */
+  /** Articles parus, du plus récent au plus ancien ; les programmés attendent leur date. */
   @Get('articles')
-  articles() {
-    return [];
+  articlesParus(@Query('limit') limit?: string) {
+    return this.articles.findPublicArticles(limit ? parseInt(limit, 10) : 100);
   }
 
+  /** Un article paru, par son adresse courte. */
   @Get('articles/:slug')
-  article(@Param('slug') slug: string) {
-    throw new NotFoundException(`Article « ${slug} » introuvable`);
+  articleParu(@Param('slug') slug: string) {
+    return this.articles.findPublicArticleBySlug(slug);
   }
 
   /** Documents publiés, classés par date, avec leur adresse de téléchargement. */

@@ -83,6 +83,38 @@ export class SupabaseService {
   }
 
   /**
+   * Dépose une image d'article (couverture ou illustration du corps) et
+   * retourne l'URL publique.
+   * Chemin: articles/{articleId}/{timestamp}-{random}.{ext}
+   */
+  async uploadArticleImage(
+    buffer: Buffer,
+    mimetype: string,
+    articleId: string,
+  ): Promise<string> {
+    if (!this.client) {
+      throw new Error('Supabase non configuré (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
+    }
+    const ext = mimetype.split('/')[1]?.replace(/[^a-z0-9]/gi, '').replace('jpeg', 'jpg') || 'jpg';
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}.${ext}`;
+    const path = `articles/${articleId}/${filename}`;
+
+    const { error } = await this.client.storage
+      .from(this.bucket)
+      .upload(path, buffer, {
+        contentType: mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new Error(`Upload Supabase: ${error.message}`);
+    }
+
+    const { data } = this.client.storage.from(this.bucket).getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  /**
    * Upload une photo d'activité et retourne l'URL publique.
    * Chemin: activities/{activityId}/{timestamp}-{random}.{ext}
    * Utilise le bucket 'avatars' existant pour éviter la création d'un nouveau bucket.

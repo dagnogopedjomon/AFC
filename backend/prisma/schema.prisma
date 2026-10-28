@@ -70,6 +70,14 @@ enum PublicationStatus {
 }
 
 /// Classement des documents mis à disposition sur le site (cahier des charges, section 5).
+/// Rubriques du blog du club (cahier des charges, section 5).
+enum ArticleCategory {
+  VIE_DU_CLUB
+  REGLES
+  COMMUNIQUES
+  COMPTES_RENDUS
+}
+
 enum DocumentCategory {
   STATUTS
   REGLEMENT
@@ -164,6 +172,7 @@ model Member {
   contributionExemptions   ContributionExemption[]   @relation("ExemptedMember")
   exemptionsCreated        ContributionExemption[]   @relation("ExemptionCreator")
   documentsUploaded        Document[]
+  articlesWritten          Article[]
 }
 
 /// Historique des actions sur un membre (invitation, mise à jour, suspension, etc.)
@@ -532,6 +541,37 @@ model Photo {
   activity     Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
   uploadedById String
   uploadedBy   Member    @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+}
+
+/// Article du blog publié sur le site du club (lot 3 du module Publications).
+model Article {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  title       String
+  /// Adresse courte tirée du titre, unique ; servie par /public/articles/{slug}.
+  slug        String?         @unique
+  /// Deux phrases affichées dans les listes du site.
+  excerpt     String?
+  /// Corps de l'article, déjà assaini à l'enregistrement (section 6 du cahier des charges).
+  contentHtml String          @db.Text
+  category    ArticleCategory @default(VIE_DU_CLUB)
+  /// Signature affichée sur le site : « Le bureau », un prénom, ce que le bureau décide.
+  authorName  String?
+
+  /// Image de couverture : Supabase Storage, ou /uploads/articles/… à défaut.
+  coverUrl String?
+  coverAlt String?
+
+  /// Date de parution, modifiable et éventuellement à venir : l'article ne sort qu'à cette date.
+  publishedAt       DateTime?
+  publicationStatus PublicationStatus @default(DRAFT)
+
+  createdById String
+  createdBy   Member @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([publicationStatus, publishedAt])
 }
 
 /// Document téléchargeable depuis le site du club (lot 2 du module Publications).
