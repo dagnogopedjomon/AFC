@@ -1,12 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+/** Dernière tentative de reconstruction, telle que le bureau la voit à l'écran. */
+export type EtatReconstruction = {
+  /** Une destination est configurée : sans elle, publier ne met pas le site à jour. */
+  configuree: boolean;
+  /** Dernière demande envoyée, quelle qu'en soit l'issue. */
+  derniereDemande: string | null;
+  /** Ce qu'elle a donné : acceptée, refusée, ou injoignable. */
+  derniereIssue: 'acceptee' | 'refusee' | 'injoignable' | null;
+  derniereRaison: string | null;
+};
+
 /**
  * Lot 4 du module « Publications » : reconstruction du site public.
  *
  * À chaque publication, retrait ou modification d'un contenu public,
- * l'application appelle une adresse secrète de reconstruction (cahier des
- * charges, section 8). Chez Netlify comme chez Vercel, c'est une URL de
- * déploiement à poser dans SITE_REBUILD_HOOK_URL.
+ * l'application demande la reconstruction du site (cahier des charges,
+ * section 8). Deux destinations possibles, cumulables :
+ *
+ *   SITE_REBUILD_HOOK_URL         crochet de déploiement d'un hébergeur
+ *                                 (Netlify, Vercel) : une simple adresse secrète.
+ *   SITE_REBUILD_DISPATCH_URL     dépôt GitHub, avec SITE_REBUILD_DISPATCH_TOKEN :
+ *                                 déclenche le dépôt FTP vers Hostinger.
  *
  * L'appel ne doit jamais faire échouer la publication : s'il échoue, on le
  * note dans le journal du serveur et le site en ligne reste simplement
@@ -17,9 +32,22 @@ export class SiteRebuildService {
   private readonly logger = new Logger(SiteRebuildService.name);
   /** Regroupe les reconstructions : plusieurs publications d'affilée n'en déclenchent qu'une. */
   private pending: NodeJS.Timeout | null = null;
+  private derniereDemande: Date | null = null;
+  private derniereIssue: EtatReconstruction['derniereIssue'] = null;
+  private derniereRaison: string | null = null;
 
   isConfigured(): boolean {
     return !!(process.env.SITE_REBUILD_HOOK_URL?.trim() || this.dispatchConfigured());
+  }
+
+  /** Ce que l'écran du bureau affiche : configuré ou non, et ce qu'a donné la dernière demande. */
+  etat(): EtatReconstruction {
+    return {
+      configuree: this.isConfigured(),
+      derniereDemande: this.derniereDemande ? this.derniereDemande.toISOString() : null,
+      derniereIssue: this.derniereIssue,
+      derniereRaison: this.derniereRaison,
+    };
   }
 
   private dispatchConfigured(): boolean {
@@ -44,7 +72,26 @@ export class SiteRebuildService {
     this.pending.unref?.();
   }
 
+  /**
+   * Demande immédiate, sans attendre le regroupement : c'est le bouton
+   * « Mettre le site à jour maintenant » du bureau. Renvoie l'état obtenu,
+   * pour que l'écran dise ce qui s'est réellement passé.
+   */
+  async requestNow(reason: string): Promise<EtatReconstruction> {
+    if (!this.isConfigured()) return this.etat();
+    if (this.pending) {
+      clearTimeout(this.pending);
+      this.pending = null;
+    }
+    await this.trigger(reason);
+    return this.etat();
+  }
+
   private async trigger(reason: string): Promise<void> {
+    this.derniereDemande = new Date();
+    this.derniereRaison = reason;
+    this.derniereIssue = null;
+
     const hook = process.env.SITE_REBUILD_HOOK_URL?.trim();
     if (hook) {
       await this.post('hébergeur', hook, reason);
@@ -78,11 +125,14 @@ export class SiteRebuildService {
     try {
       const response = await fetch(url, { method: 'POST', headers, body, signal: controller.signal });
       if (response.ok) {
+        this.derniereIssue = 'acceptee';
         this.logger.log(`Reconstruction demandée au ${cible} (${reason}).`);
       } else {
+        this.derniereIssue = 'refusee';
         this.logger.warn(`Reconstruction refusée par le ${cible} : HTTP ${response.status}.`);
       }
     } catch (err) {
+      this.derniereIssue = 'injoignable';
       this.logger.warn(
         `Reconstruction impossible au ${cible} : ${err instanceof Error ? err.message : 'erreur réseau'}.`,
       );
