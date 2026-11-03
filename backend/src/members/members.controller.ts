@@ -31,7 +31,19 @@ import { Role } from '@prisma/client';
 import type { RequestUser } from '../auth/jwt.strategy';
 
 const avatarsDir = join(process.cwd(), 'uploads', 'avatars');
-const avatarStorage = multer.memoryStorage();
+
+/** Une image, 5 Mo au plus, gardée en mémoire le temps d'être rangée. */
+const interceptAvatar = FileInterceptor('file', {
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      cb(new Error('Seules les images sont acceptées'), false);
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 const BUREAU_ROLES: Role[] = [
   Role.PRESIDENT,
@@ -88,44 +100,64 @@ export class MembersController {
     return this.membersService.completeProfile(user.id, dto);
   }
 
-  @Post('me/avatar')
-  @SkipProfileCheck()
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: avatarStorage,
-      limits: { fileSize: 5 * 1024 * 1024 },
-      fileFilter: (_req, file, cb) => {
-        if (!file.mimetype.startsWith('image/')) {
-          cb(new Error('Seules les images sont acceptées'), false);
-          return;
-        }
-        cb(null, true);
-      },
-    }),
-  )
-  async uploadAvatar(
-    @CurrentUser() user: RequestUser,
-    @UploadedFile() file: Express.Multer.File | undefined,
-  ) {
+  /** Ranger l'image reçue et renvoyer son adresse, sans toucher au membre. */
+  private async rangerAvatar(
+    file: Express.Multer.File | undefined,
+    proprietaireId: string,
+  ): Promise<string> {
     if (!file) throw new BadRequestException('Aucun fichier envoyé');
     const buffer = file.buffer;
     if (!buffer) throw new BadRequestException('Fichier invalide');
 
     if (this.supabase.isConfigured()) {
-      const publicUrl = await this.supabase.uploadAvatar(
-        buffer,
-        file.mimetype,
-        user.id,
-      );
-      return { url: publicUrl };
+      return this.supabase.uploadAvatar(buffer, file.mimetype, proprietaireId);
     }
 
     if (!existsSync(avatarsDir)) mkdirSync(avatarsDir, { recursive: true });
     const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z]/g, '') || 'jpg';
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}.${ext}`;
-    const filepath = join(avatarsDir, filename);
-    writeFileSync(filepath, buffer);
-    return { url: `/uploads/avatars/${filename}` };
+    writeFileSync(join(avatarsDir, filename), buffer);
+    return `/uploads/avatars/${filename}`;
+  }
+
+  /** Dépôt d'image à la première connexion : le profil n'existe pas encore. */
+  @Post('me/avatar')
+  @SkipProfileCheck()
+  @UseInterceptors(interceptAvatar)
+  async uploadAvatar(
+    @CurrentUser() user: RequestUser,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    return { url: await this.rangerAvatar(file, user.id) };
+  }
+
+  /** Changer sa propre photo depuis les paramètres, une fois le profil complet. */
+  @Post('me/photo')
+  @UseGuards(ProfileCompletedGuard)
+  @UseInterceptors(interceptAvatar)
+  async changerMaPhoto(
+    @CurrentUser() user: RequestUser,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    const url = await this.rangerAvatar(file, user.id);
+    return this.membersService.updateProfilePhoto(user.id, url, user.id);
+  }
+
+  /**
+   * Le bureau dépose la photo d'un membre qui n'en a pas mis à son
+   * inscription. Sans cela, sa fiche sur le site du club reste sans portrait.
+   */
+  @Post(':id/photo')
+  @UseGuards(ProfileCompletedGuard, RolesGuard)
+  @Roles(Role.ADMIN, ...BUREAU_ROLES)
+  @UseInterceptors(interceptAvatar)
+  async changerLaPhotoDe(
+    @Param('id') id: string,
+    @CurrentUser() user: RequestUser,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    const url = await this.rangerAvatar(file, id);
+    return this.membersService.updateProfilePhoto(id, url, user.id);
   }
 
   @Get(':id/audit-log')

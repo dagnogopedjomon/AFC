@@ -12,6 +12,7 @@ import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SiteRebuildService } from '../public/site-rebuild.service';
 
 const SALT_ROUNDS = 10;
 
@@ -23,6 +24,7 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly siteRebuild: SiteRebuildService,
       private readonly jwtService: JwtService,
   ) {}
 
@@ -203,6 +205,40 @@ export class MembersService {
     });
     await this.logAudit(userId, 'PROFILE_COMPLETED', userId, undefined);
     return member;
+  }
+
+  /**
+   * Changer la photo de profil.
+   *
+   * Un membre le fait pour lui-même depuis ses paramètres ; le bureau peut le
+   * faire à sa place, pour quelqu'un qui n'a pas déposé de portrait à son
+   * inscription. Dans les deux cas l'auteur est consigné au journal.
+   *
+   * Si la personne paraît sur le site du club, sa fiche y porte cette photo :
+   * le site est donc refabriqué pour suivre.
+   */
+  async updateProfilePhoto(memberId: string, url: string, performedById: string) {
+    const avant = await this.prisma.member.findUnique({
+      where: { id: memberId },
+      select: { id: true, sitePublicConsent: true },
+    });
+    if (!avant) throw new NotFoundException('Membre introuvable');
+
+    const membre = await this.prisma.member.update({
+      where: { id: memberId },
+      data: { profilePhotoUrl: url },
+      select: this.selectPublic(),
+    });
+    await this.logAudit(
+      memberId,
+      'PROFILE_PHOTO_UPDATED',
+      performedById,
+      memberId === performedById ? undefined : 'Photo déposée par le bureau.',
+    );
+    if (avant.sitePublicConsent) {
+      this.siteRebuild.request("changement de photo sur l'effectif du site");
+    }
+    return membre;
   }
 
   /** Enregistrer une action sur un membre (utilisé aussi par contributions pour REACTIVATED). */
