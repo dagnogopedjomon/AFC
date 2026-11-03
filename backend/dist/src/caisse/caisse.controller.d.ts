@@ -15,6 +15,7 @@ export declare class CaisseController {
             description: string | null;
             order: number;
             isDefault: boolean;
+            openingBalance: number;
             solde: number;
             totalEntries: number;
             totalExits: number;
@@ -41,6 +42,20 @@ export declare class CaisseController {
         };
         periodYear: number | null;
         periodMonth: number | null;
+        type: "entree" | "sortie";
+        date: string;
+    } | {
+        kind: string;
+        id: string;
+        amount: number;
+        label: string;
+        description: string;
+        cashBox: string | null;
+        member: {
+            id: string;
+            firstName: string;
+            lastName: string;
+        };
         type: "entree" | "sortie";
         date: string;
     } | {
@@ -101,6 +116,7 @@ export declare class CaisseController {
         description: string | null;
         order: number;
         isDefault: boolean;
+        openingBalance: import("@prisma/client-runtime-utils").Decimal;
     }[]>;
     createCashBox(dto: CreateCashBoxDto): Promise<{
         id: string;
@@ -110,6 +126,7 @@ export declare class CaisseController {
         description: string | null;
         order: number;
         isDefault: boolean;
+        openingBalance: import("@prisma/client-runtime-utils").Decimal;
     }>;
     updateCashBox(id: string, dto: UpdateCashBoxDto): Promise<{
         id: string;
@@ -119,6 +136,7 @@ export declare class CaisseController {
         description: string | null;
         order: number;
         isDefault: boolean;
+        openingBalance: import("@prisma/client-runtime-utils").Decimal;
     }>;
     deleteCashBox(id: string): Promise<{
         success: boolean;
@@ -131,6 +149,13 @@ export declare class CaisseController {
         cashBox: {
             id: string;
             name: string;
+        } | null;
+        category: {
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            name: string;
+            isActive: boolean;
         } | null;
         requestedBy: {
             id: string;
@@ -152,22 +177,31 @@ export declare class CaisseController {
         createdAt: Date;
         updatedAt: Date;
         amount: import("@prisma/client-runtime-utils").Decimal;
+        status: import("@prisma/client").$Enums.ExpenseStatus;
+        beneficiary: string | null;
         cashBoxId: string | null;
         description: string;
-        requestedById: string;
-        status: import("@prisma/client").$Enums.ExpenseStatus;
         expenseDate: Date;
-        beneficiary: string | null;
-        treasurerApprovedById: string | null;
+        note: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        categoryId: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
     })[]>;
     findOneExpense(id: string): Promise<{
         cashBox: {
             id: string;
             name: string;
+        } | null;
+        category: {
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            name: string;
+            isActive: boolean;
         } | null;
         requestedBy: {
             id: string;
@@ -190,22 +224,31 @@ export declare class CaisseController {
         createdAt: Date;
         updatedAt: Date;
         amount: import("@prisma/client-runtime-utils").Decimal;
+        status: import("@prisma/client").$Enums.ExpenseStatus;
+        beneficiary: string | null;
         cashBoxId: string | null;
         description: string;
-        requestedById: string;
-        status: import("@prisma/client").$Enums.ExpenseStatus;
         expenseDate: Date;
-        beneficiary: string | null;
-        treasurerApprovedById: string | null;
+        note: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        categoryId: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
     }>;
     createExpense(dto: CreateExpenseDto, user: RequestUser): Promise<{
         cashBox: {
             id: string;
             name: string;
+        } | null;
+        category: {
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            name: string;
+            isActive: boolean;
         } | null;
         requestedBy: {
             id: string;
@@ -217,17 +260,19 @@ export declare class CaisseController {
         createdAt: Date;
         updatedAt: Date;
         amount: import("@prisma/client-runtime-utils").Decimal;
+        status: import("@prisma/client").$Enums.ExpenseStatus;
+        beneficiary: string | null;
         cashBoxId: string | null;
         description: string;
-        requestedById: string;
-        status: import("@prisma/client").$Enums.ExpenseStatus;
         expenseDate: Date;
-        beneficiary: string | null;
-        treasurerApprovedById: string | null;
+        note: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        categoryId: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
     }>;
     validateByTreasurer(id: string, user: RequestUser): Promise<{
         requestedBy: {
@@ -250,17 +295,19 @@ export declare class CaisseController {
         createdAt: Date;
         updatedAt: Date;
         amount: import("@prisma/client-runtime-utils").Decimal;
+        status: import("@prisma/client").$Enums.ExpenseStatus;
+        beneficiary: string | null;
         cashBoxId: string | null;
         description: string;
-        requestedById: string;
-        status: import("@prisma/client").$Enums.ExpenseStatus;
         expenseDate: Date;
-        beneficiary: string | null;
-        treasurerApprovedById: string | null;
+        note: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        categoryId: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
     }>;
     validateByCommissioner(id: string, user: RequestUser): Promise<{
         requestedBy: {
@@ -283,17 +330,19 @@ export declare class CaisseController {
         createdAt: Date;
         updatedAt: Date;
         amount: import("@prisma/client-runtime-utils").Decimal;
+        status: import("@prisma/client").$Enums.ExpenseStatus;
+        beneficiary: string | null;
         cashBoxId: string | null;
         description: string;
-        requestedById: string;
-        status: import("@prisma/client").$Enums.ExpenseStatus;
         expenseDate: Date;
-        beneficiary: string | null;
-        treasurerApprovedById: string | null;
+        note: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        categoryId: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
     }>;
     rejectExpense(id: string, dto: RejectExpenseDto, user: RequestUser): Promise<{
         requestedBy: {
@@ -316,17 +365,19 @@ export declare class CaisseController {
         createdAt: Date;
         updatedAt: Date;
         amount: import("@prisma/client-runtime-utils").Decimal;
+        status: import("@prisma/client").$Enums.ExpenseStatus;
+        beneficiary: string | null;
         cashBoxId: string | null;
         description: string;
-        requestedById: string;
-        status: import("@prisma/client").$Enums.ExpenseStatus;
         expenseDate: Date;
-        beneficiary: string | null;
-        treasurerApprovedById: string | null;
+        note: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        categoryId: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
     }>;
     findAllTransfers(cashBoxId?: string, limit?: string): Promise<({
         requestedBy: {
@@ -358,14 +409,14 @@ export declare class CaisseController {
         updatedAt: Date;
         type: import("@prisma/client").$Enums.CashBoxTransferType;
         amount: import("@prisma/client-runtime-utils").Decimal;
-        description: string | null;
-        requestedById: string;
         status: import("@prisma/client").$Enums.ExpenseStatus;
-        treasurerApprovedById: string | null;
+        description: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
         fromCashBoxId: string | null;
         toCashBoxId: string | null;
     })[]>;
@@ -399,14 +450,14 @@ export declare class CaisseController {
         updatedAt: Date;
         type: import("@prisma/client").$Enums.CashBoxTransferType;
         amount: import("@prisma/client-runtime-utils").Decimal;
-        description: string | null;
-        requestedById: string;
         status: import("@prisma/client").$Enums.ExpenseStatus;
-        treasurerApprovedById: string | null;
+        description: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
         fromCashBoxId: string | null;
         toCashBoxId: string | null;
     }>;
@@ -430,14 +481,14 @@ export declare class CaisseController {
         updatedAt: Date;
         type: import("@prisma/client").$Enums.CashBoxTransferType;
         amount: import("@prisma/client-runtime-utils").Decimal;
-        description: string | null;
-        requestedById: string;
         status: import("@prisma/client").$Enums.ExpenseStatus;
-        treasurerApprovedById: string | null;
+        description: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
         fromCashBoxId: string | null;
         toCashBoxId: string | null;
     }>;
@@ -471,14 +522,14 @@ export declare class CaisseController {
         updatedAt: Date;
         type: import("@prisma/client").$Enums.CashBoxTransferType;
         amount: import("@prisma/client-runtime-utils").Decimal;
-        description: string | null;
-        requestedById: string;
         status: import("@prisma/client").$Enums.ExpenseStatus;
-        treasurerApprovedById: string | null;
+        description: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
         fromCashBoxId: string | null;
         toCashBoxId: string | null;
     }>;
@@ -512,14 +563,14 @@ export declare class CaisseController {
         updatedAt: Date;
         type: import("@prisma/client").$Enums.CashBoxTransferType;
         amount: import("@prisma/client-runtime-utils").Decimal;
-        description: string | null;
-        requestedById: string;
         status: import("@prisma/client").$Enums.ExpenseStatus;
-        treasurerApprovedById: string | null;
+        description: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
         fromCashBoxId: string | null;
         toCashBoxId: string | null;
     }>;
@@ -553,14 +604,14 @@ export declare class CaisseController {
         updatedAt: Date;
         type: import("@prisma/client").$Enums.CashBoxTransferType;
         amount: import("@prisma/client-runtime-utils").Decimal;
-        description: string | null;
-        requestedById: string;
         status: import("@prisma/client").$Enums.ExpenseStatus;
-        treasurerApprovedById: string | null;
+        description: string | null;
         treasurerApprovedAt: Date | null;
-        commissionerApprovedById: string | null;
         commissionerApprovedAt: Date | null;
         rejectReason: string | null;
+        requestedById: string;
+        treasurerApprovedById: string | null;
+        commissionerApprovedById: string | null;
         fromCashBoxId: string | null;
         toCashBoxId: string | null;
     }>;

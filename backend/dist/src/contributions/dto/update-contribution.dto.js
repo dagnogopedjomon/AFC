@@ -11,11 +11,18 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UpdateContributionDto = void 0;
 const class_validator_1 = require("class-validator");
+const client_1 = require("@prisma/client");
 class UpdateContributionDto {
     name;
     amount;
+    isOpenAmount;
+    deadline;
+    targetMemberIds;
+    beneficiaryMemberId;
+    status;
     startDate;
     endDate;
+    allowPartialPayment;
 }
 exports.UpdateContributionDto = UpdateContributionDto;
 __decorate([
@@ -31,6 +38,32 @@ __decorate([
 ], UpdateContributionDto.prototype, "amount", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateContributionDto.prototype, "isOpenAmount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], UpdateContributionDto.prototype, "deadline", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsString)({ each: true }),
+    __metadata("design:type", Array)
+], UpdateContributionDto.prototype, "targetMemberIds", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateContributionDto.prototype, "beneficiaryMemberId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(client_1.ContributionStatus),
+    __metadata("design:type", String)
+], UpdateContributionDto.prototype, "status", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsDateString)(),
     __metadata("design:type", String)
 ], UpdateContributionDto.prototype, "startDate", void 0);
@@ -39,4 +72,9 @@ __decorate([
     (0, class_validator_1.IsDateString)(),
     __metadata("design:type", String)
 ], UpdateContributionDto.prototype, "endDate", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateContributionDto.prototype, "allowPartialPayment", void 0);
 //# sourceMappingURL=update-contribution.dto.js.map

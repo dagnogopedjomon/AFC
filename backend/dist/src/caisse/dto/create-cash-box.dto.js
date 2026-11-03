@@ -16,6 +16,7 @@ class CreateCashBoxDto {
     description;
     order;
     isDefault;
+    openingBalance;
 }
 exports.CreateCashBoxDto = CreateCashBoxDto;
 __decorate([
@@ -39,4 +40,10 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateCashBoxDto.prototype, "isDefault", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], CreateCashBoxDto.prototype, "openingBalance", void 0);
 //# sourceMappingURL=create-cash-box.dto.js.map

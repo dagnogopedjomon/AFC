@@ -11,12 +11,15 @@ const common_1 = require("@nestjs/common");
 const schedule_1 = require("@nestjs/schedule");
 const suspensions_scheduler_1 = require("./suspensions.scheduler");
 const contributions_module_1 = require("../contributions/contributions.module");
+const notifications_module_1 = require("../notifications/notifications.module");
+const regularizations_module_1 = require("../regularizations/regularizations.module");
+const members_module_1 = require("../members/members.module");
 let SchedulerModule = class SchedulerModule {
 };
 exports.SchedulerModule = SchedulerModule;
 exports.SchedulerModule = SchedulerModule = __decorate([
     (0, common_1.Module)({
-        imports: [schedule_1.ScheduleModule.forRoot(), contributions_module_1.ContributionsModule],
+        imports: [schedule_1.ScheduleModule.forRoot(), contributions_module_1.ContributionsModule, notifications_module_1.NotificationsModule, regularizations_module_1.RegularizationsModule, members_module_1.MembersModule],
         providers: [suspensions_scheduler_1.SuspensionsScheduler],
     })
 ], SchedulerModule);

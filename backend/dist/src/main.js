@@ -26,8 +26,13 @@ async function bootstrap() {
     validateProductionEnv();
     const app = await core_1.NestFactory.create(app_module_1.AppModule, {
         bufferLogs: true,
+        rawBody: true,
     });
     app.useGlobalPipes(new common_1.ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
+    const apiPrefix = process.env.API_PREFIX?.trim().replace(/^\/+|\/+$/g, '');
+    if (apiPrefix) {
+        app.setGlobalPrefix(apiPrefix);
+    }
     const frontendUrlRaw = process.env.FRONTEND_URL?.trim() || '';
     const allowedOrigins = frontendUrlRaw
         .split(',')

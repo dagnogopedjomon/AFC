@@ -17,6 +17,8 @@ class CreateExpenseDto {
     expenseDate;
     cashBoxId;
     beneficiary;
+    categoryId;
+    note;
 }
 exports.CreateExpenseDto = CreateExpenseDto;
 __decorate([
@@ -44,4 +46,14 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateExpenseDto.prototype, "beneficiary", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateExpenseDto.prototype, "categoryId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateExpenseDto.prototype, "note", void 0);
 //# sourceMappingURL=create-expense.dto.js.map

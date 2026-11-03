@@ -148,6 +148,13 @@ model Member {
   reactivatedAt        DateTime? // Si réactivation manuelle par admin : date limite 24h pour payer, sinon re-suspension
   lastSeenActivitiesAt DateTime? // Dernière visite page Activités (pour badge « non vues »)
 
+  // Présentation sur le site public (écran « L'effectif »). Le nom et la photo
+  // d'une personne ne sortent qu'avec son accord explicite ; le retirer suffit
+  // à la faire disparaître du site à la reconstruction suivante.
+  sitePublicConsent    Boolean   @default(false)
+  sitePublicConsentAt  DateTime?
+  sitePublicOrder      Int? // Rang d'affichage dans son groupe ; à défaut, le nom
+
   // Relations
   paymentsAsPayer          Payment[]
   expensesRequested        Expense[]                 @relation("ExpenseRequester")

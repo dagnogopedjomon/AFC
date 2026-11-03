@@ -14,10 +14,11 @@ const class_validator_1 = require("class-validator");
 class LoginDto {
     phone;
     password;
+    deviceId;
 }
 exports.LoginDto = LoginDto;
 __decorate([
-    (0, class_validator_1.IsNotEmpty)({ message: 'Le numéro de téléphone est requis' }),
+    (0, class_validator_1.IsNotEmpty)({ message: 'L’identifiant est requis' }),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], LoginDto.prototype, "phone", void 0);
@@ -27,4 +28,9 @@ __decorate([
     (0, class_validator_1.MinLength)(6, { message: 'Le mot de passe doit contenir au moins 6 caractères' }),
     __metadata("design:type", String)
 ], LoginDto.prototype, "password", void 0);
+__decorate([
+    (0, class_validator_1.IsNotEmpty)({ message: 'L’appareil est requis' }),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], LoginDto.prototype, "deviceId", void 0);
 //# sourceMappingURL=login.dto.js.map

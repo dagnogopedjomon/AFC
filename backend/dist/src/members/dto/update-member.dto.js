@@ -23,6 +23,7 @@ class UpdateMemberDto {
     profileCompleted;
     isSuspended;
     role;
+    membershipStatus;
 }
 exports.UpdateMemberDto = UpdateMemberDto;
 __decorate([
@@ -76,4 +77,9 @@ __decorate([
     (0, class_validator_1.IsEnum)(client_1.Role, { message: 'Rôle invalide' }),
     __metadata("design:type", String)
 ], UpdateMemberDto.prototype, "role", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(client_1.MembershipStatus, { message: 'Statut de membre invalide' }),
+    __metadata("design:type", String)
+], UpdateMemberDto.prototype, "membershipStatus", void 0);
 //# sourceMappingURL=update-member.dto.js.map

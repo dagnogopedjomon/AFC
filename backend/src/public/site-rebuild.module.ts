@@ -1,6 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { SiteRebuildService } from './site-rebuild.service';
 import { SiteRebuildController } from './site-rebuild.controller';
+import { EffectifService } from './effectif.service';
+import { EffectifController } from './effectif.controller';
 import { PublicationsScheduler } from './publications.scheduler';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -20,8 +22,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 @Global()
 @Module({
   imports: [PrismaModule],
-  controllers: [SiteRebuildController],
-  providers: [SiteRebuildService, PublicationsScheduler],
-  exports: [SiteRebuildService],
+  controllers: [SiteRebuildController, EffectifController],
+  providers: [SiteRebuildService, PublicationsScheduler, EffectifService],
+  exports: [SiteRebuildService, EffectifService],
 })
 export class SiteRebuildModule {}

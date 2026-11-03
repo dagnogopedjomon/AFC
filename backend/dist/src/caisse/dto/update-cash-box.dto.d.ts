@@ -3,4 +3,5 @@ export declare class UpdateCashBoxDto {
     description?: string;
     order?: number;
     isDefault?: boolean;
+    openingBalance?: number;
 }

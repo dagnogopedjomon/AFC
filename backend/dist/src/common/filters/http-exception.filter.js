@@ -17,18 +17,27 @@ let HttpExceptionFilter = HttpExceptionFilter_1 = class HttpExceptionFilter {
         const req = ctx.getRequest();
         const isHttp = exception instanceof common_1.HttpException;
         const status = isHttp ? exception.getStatus() : common_1.HttpStatus.INTERNAL_SERVER_ERROR;
+        const defaultMessage = exception instanceof Error && exception.message ? exception.message : 'Erreur interne du serveur';
         const responseBody = isHttp
             ? exception.getResponse()
-            : { statusCode: 500, message: 'Erreur interne du serveur' };
-        const finalMessage = typeof responseBody === 'object' && responseBody !== null && 'message' in responseBody
-            ? responseBody.message
-            : 'Erreur serveur';
+            : { statusCode: 500, message: defaultMessage };
+        const finalMessage = typeof responseBody === 'string'
+            ? responseBody
+            : typeof responseBody === 'object' && responseBody !== null && 'message' in responseBody
+                ? responseBody.message
+                : exception instanceof Error && exception.message
+                    ? exception.message
+                    : 'Erreur serveur';
         if (status >= 500) {
             this.logger.error(`${req.method} ${req.url} ${status} - ${JSON.stringify(finalMessage)}`, exception instanceof Error ? exception.stack : String(exception));
         }
         res.status(status).json(typeof responseBody === 'object' && responseBody !== null
-            ? { ...responseBody, statusCode: status }
-            : { statusCode: status, message: finalMessage });
+            ? {
+                ...responseBody,
+                statusCode: status,
+                message: finalMessage ?? (status >= 500 ? 'Erreur interne du serveur' : undefined),
+            }
+            : { statusCode: status, message: finalMessage ?? 'Erreur interne du serveur' });
     }
 };
 exports.HttpExceptionFilter = HttpExceptionFilter;

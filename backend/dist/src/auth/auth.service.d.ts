@@ -6,6 +6,7 @@ export type JwtPayload = {
     sub: string;
     phone: string;
     role: Role;
+    deviceId?: string;
 };
 export type ActivationPayload = {
     sub: string;
@@ -29,18 +30,22 @@ export declare class AuthService {
     private readonly prisma;
     private readonly jwtService;
     private readonly notifications;
+    private readonly logger;
     constructor(prisma: PrismaService, jwtService: JwtService, notifications: NotificationsService);
-    validateUser(phone: string, password: string): Promise<{
+    validateUser(identifier: string, password: string): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         passwordHash: string | null;
+        activeDeviceId: string | null;
         otpCode: string | null;
         otpExpiresAt: Date | null;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
+        membershipStatusManual: boolean;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -49,12 +54,19 @@ export declare class AuthService {
         isSuspended: boolean;
         reactivatedAt: Date | null;
         lastSeenActivitiesAt: Date | null;
+        sitePublicConsent: boolean;
+        sitePublicConsentAt: Date | null;
+        sitePublicOrder: number | null;
     } | null>;
-    login(phone: string, password: string): Promise<AuthResult>;
+    login(phone: string, password: string, deviceId: string): Promise<AuthResult>;
+    logout(userId: string, deviceId?: string): Promise<{
+        ok: boolean;
+    }>;
+    assertDevice(userId: string, deviceId?: string): Promise<void>;
     findById(id: string): Promise<{
         id: string;
-        createdAt: Date;
         phone: string;
+        createdAt: Date;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
@@ -82,6 +94,10 @@ export declare class AuthService {
         phone: string;
     }>;
     setPassword(activationToken: string, password: string): Promise<{
+        ok: boolean;
+        message: string;
+    }>;
+    changePassword(memberId: string, currentPassword: string, newPassword: string): Promise<{
         ok: boolean;
         message: string;
     }>;

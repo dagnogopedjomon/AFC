@@ -6,7 +6,21 @@ export declare class NotificationsService {
     private readonly prisma;
     private readonly whatsapp;
     private readonly sms;
+    private readonly logger;
     constructor(prisma: PrismaService, whatsapp: WhatsappService, sms: SmsService);
+    isEmailConfigured(): boolean;
+    private sendEmail;
+    sendJekoPaymentReminder(params: {
+        memberId: string;
+        periodLabel: string;
+        redirectUrl: string;
+        amountFcfa: number;
+    }): Promise<void>;
+    sendJekoPaymentConfirmation(params: {
+        memberId: string;
+        amountFcfa: number;
+        periodLabel?: string;
+    }): Promise<void>;
     log(memberId: string, channel: NotificationChannel, type: string, payload?: Record<string, unknown>): Promise<{
         id: string;
         memberId: string;
@@ -25,8 +39,8 @@ export declare class NotificationsService {
     }>;
     sendActivationInvite(memberId: string, phone: string, activationLink: string): Promise<{
         ok: boolean;
-        whatsappSent?: boolean;
-        whatsappError?: string;
+        smsSent: boolean;
+        smsError?: string;
     }>;
     sendActivationOtp(phone: string, code: string): Promise<{
         ok: boolean;

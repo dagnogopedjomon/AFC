@@ -45,6 +45,61 @@ let SupabaseService = class SupabaseService {
         const { data } = this.client.storage.from(this.bucket).getPublicUrl(path);
         return data.publicUrl;
     }
+    async uploadDocument(buffer, mimetype, documentId, filename) {
+        if (!this.client) {
+            throw new Error('Supabase non configuré (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
+        }
+        const path = `documents/${documentId}/${filename}`;
+        const { error } = await this.client.storage
+            .from(this.bucket)
+            .upload(path, buffer, {
+            contentType: mimetype,
+            upsert: true,
+        });
+        if (error) {
+            throw new Error(`Upload Supabase: ${error.message}`);
+        }
+        const { data } = this.client.storage.from(this.bucket).getPublicUrl(path);
+        return data.publicUrl;
+    }
+    async uploadArticleImage(buffer, mimetype, articleId) {
+        if (!this.client) {
+            throw new Error('Supabase non configuré (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
+        }
+        const ext = mimetype.split('/')[1]?.replace(/[^a-z0-9]/gi, '').replace('jpeg', 'jpg') || 'jpg';
+        const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}.${ext}`;
+        const path = `articles/${articleId}/${filename}`;
+        const { error } = await this.client.storage
+            .from(this.bucket)
+            .upload(path, buffer, {
+            contentType: mimetype,
+            upsert: false,
+        });
+        if (error) {
+            throw new Error(`Upload Supabase: ${error.message}`);
+        }
+        const { data } = this.client.storage.from(this.bucket).getPublicUrl(path);
+        return data.publicUrl;
+    }
+    async uploadActivityPhoto(buffer, mimetype, activityId) {
+        if (!this.client) {
+            throw new Error('Supabase non configuré (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)');
+        }
+        const ext = mimetype.split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'jpg';
+        const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}.${ext}`;
+        const path = `activities/${activityId}/${filename}`;
+        const { error } = await this.client.storage
+            .from(this.bucket)
+            .upload(path, buffer, {
+            contentType: mimetype,
+            upsert: false,
+        });
+        if (error) {
+            throw new Error(`Upload Supabase: ${error.message}`);
+        }
+        const { data } = this.client.storage.from(this.bucket).getPublicUrl(path);
+        return data.publicUrl;
+    }
 };
 exports.SupabaseService = SupabaseService;
 exports.SupabaseService = SupabaseService = __decorate([

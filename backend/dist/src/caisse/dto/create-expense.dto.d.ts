@@ -4,4 +4,6 @@ export declare class CreateExpenseDto {
     expenseDate: string;
     cashBoxId?: string;
     beneficiary?: string;
+    categoryId?: string;
+    note?: string;
 }

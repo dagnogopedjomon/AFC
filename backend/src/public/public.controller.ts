@@ -2,6 +2,7 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ActivitiesService } from '../activities/activities.service';
 import { ArticlesService } from '../articles/articles.service';
 import { DocumentsService } from '../documents/documents.service';
+import { EffectifService } from './effectif.service';
 import { Public } from '../auth/public.decorator';
 
 /**
@@ -19,6 +20,7 @@ export class PublicController {
     private readonly activities: ActivitiesService,
     private readonly articles: ArticlesService,
     private readonly documents: DocumentsService,
+    private readonly effectif: EffectifService,
   ) {}
 
   /** Événements publiés, du plus proche au plus ancien. */
@@ -43,6 +45,15 @@ export class PublicController {
   @Get('articles/:slug')
   articleParu(@Param('slug') slug: string) {
     return this.articles.findPublicArticleBySlug(slug);
+  }
+
+  /**
+   * Effectif présenté sur l'accueil : uniquement les personnes qui ont donné
+   * leur accord. Sans accord, le site affiche l'intitulé du poste, sans nom.
+   */
+  @Get('effectif')
+  effectifPublie() {
+    return this.effectif.findPublicEffectif();
   }
 
   /** Documents publiés, classés par date, avec leur adresse de téléchargement. */

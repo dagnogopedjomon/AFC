@@ -43,6 +43,7 @@ let CaisseService = class CaisseService {
                 description: dto.description?.trim() || null,
                 order: dto.order ?? 0,
                 isDefault: dto.isDefault ?? false,
+                openingBalance: dto.openingBalance ?? 0,
             },
         });
     }
@@ -60,6 +61,7 @@ let CaisseService = class CaisseService {
                 ...(dto.description !== undefined && { description: dto.description?.trim() || null }),
                 ...(dto.order !== undefined && { order: dto.order }),
                 ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
+                ...(dto.openingBalance !== undefined && { openingBalance: dto.openingBalance }),
             },
         });
     }
@@ -88,8 +90,9 @@ let CaisseService = class CaisseService {
         };
     }
     async getLivreDeCaisse(limit = 100) {
-        const [payments, expenses, transfers] = await Promise.all([
+        const [payments, fines, expenses, transfers] = await Promise.all([
             this.prisma.payment.findMany({
+                where: { cancelledAt: null },
                 orderBy: { paidAt: 'desc' },
                 take: limit * 2,
                 include: {
@@ -97,6 +100,10 @@ let CaisseService = class CaisseService {
                     contribution: { select: { id: true, name: true } },
                     cashBox: { select: { id: true, name: true } },
                 },
+            }),
+            this.prisma.fine.findMany({
+                where: { status: client_1.FineStatus.PAID }, orderBy: { paidAt: 'desc' }, take: limit * 2,
+                include: { member: { select: { id: true, firstName: true, lastName: true } }, cashBox: { select: { id: true, name: true } } },
             }),
             this.prisma.expense.findMany({
                 where: { status: client_1.ExpenseStatus.APPROVED },
@@ -124,6 +131,7 @@ let CaisseService = class CaisseService {
         ]);
         const rows = [
             ...payments.map((p) => ({ type: 'entree', kind: 'payment', date: p.paidAt, payment: p })),
+            ...fines.map((fine) => ({ type: 'entree', kind: 'fine', date: fine.paidAt ?? fine.createdAt, fine })),
             ...expenses.map((e) => ({
                 type: 'sortie',
                 kind: 'expense',
@@ -162,6 +170,12 @@ let CaisseService = class CaisseService {
                     member: e.payment.member,
                     periodYear: e.payment.periodYear,
                     periodMonth: e.payment.periodMonth,
+                };
+            if (e.kind === 'fine')
+                return {
+                    ...base, kind: 'fine', id: e.fine.id, amount: Number(e.fine.amount),
+                    label: `Amende · ${e.fine.member.firstName} ${e.fine.member.lastName}`,
+                    description: e.fine.reason, cashBox: e.fine.cashBox?.name ?? null, member: e.fine.member,
                 };
             if (e.kind === 'allocation')
                 return {
@@ -208,12 +222,12 @@ let CaisseService = class CaisseService {
         const defaultId = await this.getDefaultCashBoxId();
         const boxes = await this.prisma.cashBox.findMany({
             orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-            select: { id: true, name: true, description: true, order: true, isDefault: true },
+            select: { id: true, name: true, description: true, order: true, isDefault: true, openingBalance: true },
         });
         const boxSummaries = await Promise.all(boxes.map(async (box) => {
             const paymentWhere = box.isDefault
-                ? { OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
-                : { cashBoxId: box.id };
+                ? { cancelledAt: null, OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+                : { cashBoxId: box.id, cancelledAt: null };
             const expenseWhere = {
                 status: client_1.ExpenseStatus.APPROVED,
                 ...(box.isDefault
@@ -228,15 +242,21 @@ let CaisseService = class CaisseService {
             const withdrawalEntriesWhere = box.isDefault
                 ? { status: client_1.ExpenseStatus.APPROVED, type: client_1.CashBoxTransferType.WITHDRAWAL, OR: [{ toCashBoxId: box.id }, { toCashBoxId: null }] }
                 : { status: client_1.ExpenseStatus.APPROVED, type: client_1.CashBoxTransferType.WITHDRAWAL, toCashBoxId: box.id };
-            const [paymentsSum, expensesSum, allocIn, withdrawOut, allocOut, withdrawIn] = await Promise.all([
+            const fineWhere = box.isDefault
+                ? { status: client_1.FineStatus.PAID, OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+                : { status: client_1.FineStatus.PAID, cashBoxId: box.id };
+            const [paymentsSum, finesSum, expensesSum, allocIn, withdrawOut, allocOut, withdrawIn] = await Promise.all([
                 this.prisma.payment.aggregate({ where: paymentWhere, _sum: { amount: true } }),
+                this.prisma.fine.aggregate({ where: fineWhere, _sum: { amount: true } }),
                 this.prisma.expense.aggregate({ where: expenseWhere, _sum: { amount: true } }),
                 this.prisma.cashBoxTransfer.aggregate({ where: allocationEntriesWhere, _sum: { amount: true } }),
                 this.prisma.cashBoxTransfer.aggregate({ where: withdrawalExitsWhere, _sum: { amount: true } }),
                 this.prisma.cashBoxTransfer.aggregate({ where: allocationExitsWhere, _sum: { amount: true } }),
                 this.prisma.cashBoxTransfer.aggregate({ where: withdrawalEntriesWhere, _sum: { amount: true } }),
             ]);
-            const entries = Number(paymentsSum._sum.amount ?? 0) +
+            const entries = Number(box.openingBalance) +
+                Number(paymentsSum._sum.amount ?? 0) +
+                Number(finesSum._sum.amount ?? 0) +
                 Number(allocIn._sum.amount ?? 0) +
                 Number(withdrawIn._sum.amount ?? 0);
             const exits = Number(expensesSum._sum.amount ?? 0) +
@@ -249,19 +269,22 @@ let CaisseService = class CaisseService {
                 description: box.description,
                 order: box.order,
                 isDefault: box.isDefault,
+                openingBalance: Number(box.openingBalance),
                 solde,
                 totalEntries: entries,
                 totalExits: exits,
             };
         }));
-        const [totalPayments, totalExpenses] = await Promise.all([
-            this.prisma.payment.aggregate({ _sum: { amount: true } }),
+        const [totalPayments, totalFines, totalExpenses] = await Promise.all([
+            this.prisma.payment.aggregate({ where: { cancelledAt: null }, _sum: { amount: true } }),
+            this.prisma.fine.aggregate({ where: { status: client_1.FineStatus.PAID }, _sum: { amount: true } }),
             this.prisma.expense.aggregate({
                 where: { status: client_1.ExpenseStatus.APPROVED },
                 _sum: { amount: true },
             }),
         ]);
-        const entries = Number(totalPayments._sum.amount ?? 0);
+        const openingBalances = boxes.reduce((sum, box) => sum + Number(box.openingBalance), 0);
+        const entries = openingBalances + Number(totalPayments._sum.amount ?? 0) + Number(totalFines._sum.amount ?? 0);
         const exits = Number(totalExpenses._sum.amount ?? 0);
         return {
             boxes: boxSummaries,
@@ -274,21 +297,72 @@ let CaisseService = class CaisseService {
             lastUpdated: new Date().toISOString(),
         };
     }
+    async getCashBoxBalance(cashBoxId) {
+        const box = await this.prisma.cashBox.findUnique({ where: { id: cashBoxId } });
+        if (!box)
+            throw new common_1.NotFoundException('Sous-caisse introuvable');
+        const isDefault = box.isDefault;
+        const paymentWhere = isDefault
+            ? { cancelledAt: null, OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+            : { cashBoxId: box.id, cancelledAt: null };
+        const expenseWhere = {
+            status: client_1.ExpenseStatus.APPROVED,
+            ...(isDefault
+                ? { OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+                : { cashBoxId: box.id }),
+        };
+        const allocationEntriesWhere = { status: client_1.ExpenseStatus.APPROVED, type: client_1.CashBoxTransferType.ALLOCATION, toCashBoxId: box.id };
+        const withdrawalExitsWhere = { status: client_1.ExpenseStatus.APPROVED, type: client_1.CashBoxTransferType.WITHDRAWAL, fromCashBoxId: box.id };
+        const allocationExitsWhere = isDefault
+            ? { status: client_1.ExpenseStatus.APPROVED, type: client_1.CashBoxTransferType.ALLOCATION, OR: [{ fromCashBoxId: box.id }, { fromCashBoxId: null }] }
+            : { status: client_1.ExpenseStatus.APPROVED, type: client_1.CashBoxTransferType.ALLOCATION, fromCashBoxId: box.id };
+        const withdrawalEntriesWhere = isDefault
+            ? { status: client_1.ExpenseStatus.APPROVED, type: client_1.CashBoxTransferType.WITHDRAWAL, OR: [{ toCashBoxId: box.id }, { toCashBoxId: null }] }
+            : { status: client_1.ExpenseStatus.APPROVED, type: client_1.CashBoxTransferType.WITHDRAWAL, toCashBoxId: box.id };
+        const fineWhere = isDefault
+            ? { status: client_1.FineStatus.PAID, OR: [{ cashBoxId: box.id }, { cashBoxId: null }] }
+            : { status: client_1.FineStatus.PAID, cashBoxId: box.id };
+        const [paymentsSum, finesSum, expensesSum, allocIn, withdrawOut, allocOut, withdrawIn] = await Promise.all([
+            this.prisma.payment.aggregate({ where: paymentWhere, _sum: { amount: true } }),
+            this.prisma.fine.aggregate({ where: fineWhere, _sum: { amount: true } }),
+            this.prisma.expense.aggregate({ where: expenseWhere, _sum: { amount: true } }),
+            this.prisma.cashBoxTransfer.aggregate({ where: allocationEntriesWhere, _sum: { amount: true } }),
+            this.prisma.cashBoxTransfer.aggregate({ where: withdrawalExitsWhere, _sum: { amount: true } }),
+            this.prisma.cashBoxTransfer.aggregate({ where: allocationExitsWhere, _sum: { amount: true } }),
+            this.prisma.cashBoxTransfer.aggregate({ where: withdrawalEntriesWhere, _sum: { amount: true } }),
+        ]);
+        const entries = Number(box.openingBalance) +
+            Number(paymentsSum._sum.amount ?? 0) +
+            Number(finesSum._sum.amount ?? 0) +
+            Number(allocIn._sum.amount ?? 0) +
+            Number(withdrawIn._sum.amount ?? 0);
+        const exits = Number(expensesSum._sum.amount ?? 0) +
+            Number(withdrawOut._sum.amount ?? 0) +
+            Number(allocOut._sum.amount ?? 0);
+        return entries - exits;
+    }
     async createExpense(dto, requestedById) {
         const cashBoxId = dto.cashBoxId ?? (await this.getDefaultCashBoxId());
         const amount = new client_2.Prisma.Decimal(dto.amount);
+        const balance = await this.getCashBoxBalance(cashBoxId);
+        if (Number(amount) > balance) {
+            throw new common_1.BadRequestException(`Solde insuffisant dans cette caisse (solde : ${balance.toLocaleString('fr-FR')} FCFA).`);
+        }
         return this.prisma.expense.create({
             data: {
                 amount,
                 description: dto.description.trim(),
                 expenseDate: new Date(dto.expenseDate),
                 beneficiary: dto.beneficiary?.trim() || null,
+                categoryId: dto.categoryId || null,
+                note: dto.note?.trim() || null,
                 status: client_1.ExpenseStatus.PENDING_TREASURER,
                 cashBoxId,
                 requestedById,
             },
             include: {
                 cashBox: { select: { id: true, name: true } },
+                category: true,
                 requestedBy: {
                     select: { id: true, firstName: true, lastName: true },
                 },
@@ -303,6 +377,7 @@ let CaisseService = class CaisseService {
             orderBy: { createdAt: 'desc' },
             include: {
                 cashBox: { select: { id: true, name: true } },
+                category: true,
                 requestedBy: { select: { id: true, firstName: true, lastName: true } },
                 treasurerApprovedBy: { select: { id: true, firstName: true, lastName: true } },
                 commissionerApprovedBy: { select: { id: true, firstName: true, lastName: true } },
@@ -314,6 +389,7 @@ let CaisseService = class CaisseService {
             where: { id },
             include: {
                 cashBox: { select: { id: true, name: true } },
+                category: true,
                 requestedBy: { select: { id: true, firstName: true, lastName: true, phone: true } },
                 treasurerApprovedBy: { select: { id: true, firstName: true, lastName: true } },
                 commissionerApprovedBy: { select: { id: true, firstName: true, lastName: true } },
@@ -322,6 +398,11 @@ let CaisseService = class CaisseService {
         if (!e)
             throw new common_1.NotFoundException('Dépense introuvable');
         return e;
+    }
+    assertIndependentCommissioner(op, userId) {
+        if (op.requestedById === userId || op.treasurerApprovedById === userId) {
+            throw new common_1.ForbiddenException('Le commissaire aux comptes doit être une personne différente du demandeur et du trésorier qui a validé.');
+        }
     }
     async validateByTreasurer(expenseId, userId) {
         const expense = await this.findOneExpense(expenseId);
@@ -346,6 +427,12 @@ let CaisseService = class CaisseService {
         const expense = await this.findOneExpense(expenseId);
         if (expense.status !== client_1.ExpenseStatus.PENDING_COMMISSIONER) {
             throw new common_1.BadRequestException('Cette dépense n’est pas en attente de validation par le commissaire.');
+        }
+        this.assertIndependentCommissioner(expense, userId);
+        const cashBoxId = expense.cashBoxId ?? (await this.getDefaultCashBoxId());
+        const balance = await this.getCashBoxBalance(cashBoxId);
+        if (Number(expense.amount) > balance) {
+            throw new common_1.BadRequestException(`Solde insuffisant dans cette caisse pour approuver cette dépense (solde : ${balance.toLocaleString('fr-FR')} FCFA).`);
         }
         return this.prisma.expense.update({
             where: { id: expenseId },
@@ -470,6 +557,7 @@ let CaisseService = class CaisseService {
         if (t.status !== client_1.ExpenseStatus.PENDING_COMMISSIONER) {
             throw new common_1.BadRequestException('Ce transfert n’est pas en attente de validation par le commissaire.');
         }
+        this.assertIndependentCommissioner(t, userId);
         return this.prisma.cashBoxTransfer.update({
             where: { id: transferId },
             data: {

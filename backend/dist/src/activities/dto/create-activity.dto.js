@@ -19,6 +19,7 @@ class CreateActivityDto {
     date;
     endDate;
     result;
+    location;
 }
 exports.CreateActivityDto = CreateActivityDto;
 __decorate([
@@ -50,4 +51,9 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateActivityDto.prototype, "result", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateActivityDto.prototype, "location", void 0);
 //# sourceMappingURL=create-activity.dto.js.map

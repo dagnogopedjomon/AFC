@@ -69,6 +69,13 @@ let ReportsController = class ReportsController {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
     }
+    async exportExcel(res, year, month) {
+        const buffer = await this.reportsService.getTransactionsExcelBuffer(year ? parseInt(year, 10) : undefined, month ? parseInt(month, 10) : undefined);
+        const filename = `rapport-transactions${year ? `-${year}` : ''}${month ? `-${month}` : ''}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(buffer);
+    }
 };
 exports.ReportsController = ReportsController;
 __decorate([
@@ -112,6 +119,15 @@ __decorate([
     __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", Promise)
 ], ReportsController.prototype, "exportPdf", null);
+__decorate([
+    (0, common_1.Get)('export/xlsx'),
+    __param(0, (0, common_1.Res)()),
+    __param(1, (0, common_1.Query)('year')),
+    __param(2, (0, common_1.Query)('month')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", Promise)
+], ReportsController.prototype, "exportExcel", null);
 exports.ReportsController = ReportsController = __decorate([
     (0, common_1.Controller)('reports'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, profile_completed_guard_1.ProfileCompletedGuard, roles_guard_1.RolesGuard),

@@ -13,7 +13,6 @@ exports.JwtStrategy = void 0;
 const common_1 = require("@nestjs/common");
 const passport_1 = require("@nestjs/passport");
 const passport_jwt_1 = require("passport-jwt");
-const client_1 = require("@prisma/client");
 const auth_service_1 = require("./auth.service");
 let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(passport_jwt_1.Strategy, 'jwt') {
     authService;
@@ -30,10 +29,8 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
         if (!user) {
             throw new common_1.UnauthorizedException('Membre introuvable');
         }
-        if (user.isSuspended && user.role !== client_1.Role.ADMIN) {
-            throw new common_1.ForbiddenException('Compte suspendu. Contactez l’administrateur.');
-        }
-        return { id: user.id, phone: user.phone, role: user.role };
+        await this.authService.assertDevice(user.id, payload.deviceId);
+        return { id: user.id, phone: user.phone, role: user.role, deviceId: payload.deviceId };
     }
 };
 exports.JwtStrategy = JwtStrategy;

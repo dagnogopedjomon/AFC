@@ -59,6 +59,9 @@ let MembersController = class MembersController {
     findAll() {
         return this.membersService.findAll();
     }
+    count() {
+        return this.membersService.count();
+    }
     getMe(user) {
         return this.membersService.findOne(user.id);
     }
@@ -124,6 +127,12 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], MembersController.prototype, "findAll", null);
+__decorate([
+    (0, common_1.Get)('count'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], MembersController.prototype, "count", null);
 __decorate([
     (0, common_1.Get)('me'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),

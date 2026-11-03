@@ -11,15 +11,16 @@ export declare class MembersController {
     constructor(membersService: MembersService, supabase: SupabaseService);
     invite(dto: InviteMemberDto, user: RequestUser): Promise<{
         activationLink: string;
-        whatsappSent: boolean | undefined;
-        whatsappError: string | undefined;
+        smsSent: boolean;
+        smsError: string | undefined;
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -30,12 +31,13 @@ export declare class MembersController {
     }>;
     create(dto: CreateMemberDto): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -46,12 +48,13 @@ export declare class MembersController {
     }>;
     findAll(): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -60,14 +63,18 @@ export declare class MembersController {
         isSuspended: boolean;
         reactivatedAt: Date | null;
     }[]>;
+    count(): Promise<{
+        count: number;
+    }>;
     getMe(user: RequestUser): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -78,12 +85,13 @@ export declare class MembersController {
     }>;
     completeProfile(user: RequestUser, dto: CompleteProfileDto): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -111,12 +119,13 @@ export declare class MembersController {
     })[]>;
     findOne(id: string): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -127,12 +136,13 @@ export declare class MembersController {
     }>;
     update(id: string, dto: UpdateMemberDto, user: RequestUser): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;

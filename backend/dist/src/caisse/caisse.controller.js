@@ -184,7 +184,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)('expenses/:id/validate-commissioner'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.COMMISSIONER),
+    (0, roles_decorator_1.Roles)(client_1.Role.COMMISSIONER),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
@@ -240,7 +240,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)('transfers/:id/validate-commissioner'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(client_1.Role.ADMIN, client_1.Role.COMMISSIONER),
+    (0, roles_decorator_1.Roles)(client_1.Role.COMMISSIONER),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),

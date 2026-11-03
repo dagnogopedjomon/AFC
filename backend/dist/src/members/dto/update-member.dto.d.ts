@@ -1,4 +1,4 @@
-import { Role } from '@prisma/client';
+import { MembershipStatus, Role } from '@prisma/client';
 export declare class UpdateMemberDto {
     password?: string;
     firstName?: string;
@@ -10,4 +10,5 @@ export declare class UpdateMemberDto {
     profileCompleted?: boolean;
     isSuspended?: boolean;
     role?: Role;
+    membershipStatus?: MembershipStatus;
 }

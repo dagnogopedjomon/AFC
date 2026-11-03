@@ -20,6 +20,7 @@ const login_dto_1 = require("./dto/login.dto");
 const send_activation_otp_dto_1 = require("./dto/send-activation-otp.dto");
 const verify_activation_otp_dto_1 = require("./dto/verify-activation-otp.dto");
 const set_password_dto_1 = require("./dto/set-password.dto");
+const change_password_dto_1 = require("./dto/change-password.dto");
 const public_decorator_1 = require("./public.decorator");
 const jwt_auth_guard_1 = require("./jwt-auth.guard");
 const current_user_decorator_1 = require("./current-user.decorator");
@@ -29,7 +30,7 @@ let AuthController = class AuthController {
         this.authService = authService;
     }
     async login(dto) {
-        return this.authService.login(dto.phone, dto.password);
+        return this.authService.login(dto.phone, dto.password, dto.deviceId);
     }
     async sendActivationOtp(dto) {
         return this.authService.sendActivationOtp(dto.phone);
@@ -43,8 +44,14 @@ let AuthController = class AuthController {
     async setPassword(dto) {
         return this.authService.setPassword(dto.activationToken, dto.password);
     }
+    logout(user) {
+        return this.authService.logout(user.id, user.deviceId);
+    }
     async me(user) {
         return this.authService.findById(user.id);
+    }
+    changePassword(user, dto) {
+        return this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
     }
 };
 exports.AuthController = AuthController;
@@ -91,12 +98,29 @@ __decorate([
 ], AuthController.prototype, "setPassword", null);
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('logout'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "logout", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('me'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "me", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)('change-password'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, change_password_dto_1.ChangePasswordDto]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "changePassword", null);
 exports.AuthController = AuthController = __decorate([
     (0, common_1.Controller)('auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService])

@@ -1,4 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 export declare class ReportsService {
     private readonly prisma;
     constructor(prisma: PrismaService);
@@ -9,6 +10,7 @@ export declare class ReportsService {
             label: string;
         };
         totalEntries: number;
+        advanceEntries: number;
         totalExits: number;
         solde: number;
         payments: ({
@@ -23,24 +25,54 @@ export declare class ReportsService {
                 updatedAt: Date;
                 name: string;
                 type: import("@prisma/client").$Enums.ContributionType;
-                amount: import("@prisma/client-runtime-utils").Decimal | null;
+                amount: Prisma.Decimal | null;
+                isOpenAmount: boolean;
+                deadline: Date | null;
+                targetMemberIds: string | null;
+                beneficiaryMemberId: string | null;
+                status: import("@prisma/client").$Enums.ContributionStatus;
                 startDate: Date | null;
                 endDate: Date | null;
-                targetAmount: import("@prisma/client-runtime-utils").Decimal | null;
-                receivedAmount: import("@prisma/client-runtime-utils").Decimal | null;
+                targetAmount: Prisma.Decimal | null;
+                receivedAmount: Prisma.Decimal | null;
                 frequency: import("@prisma/client").$Enums.PaymentFrequency | null;
+                allowPartialPayment: boolean;
             };
         } & {
             id: string;
             createdAt: Date;
             memberId: string;
-            amount: import("@prisma/client-runtime-utils").Decimal;
+            amount: Prisma.Decimal;
             contributionId: string;
             paidAt: Date;
             cashBoxId: string | null;
             periodYear: number | null;
             periodMonth: number | null;
             metadata: string | null;
+            cancelledAt: Date | null;
+            cancelledById: string | null;
+            cancellationReason: string | null;
+            regularizationAgreementId: string | null;
+        })[];
+        fines: ({
+            member: {
+                phone: string;
+                firstName: string;
+                lastName: string;
+            };
+        } & {
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            memberId: string;
+            amount: Prisma.Decimal;
+            status: import("@prisma/client").$Enums.FineStatus;
+            paidAt: Date | null;
+            cashBoxId: string | null;
+            cancelledAt: Date | null;
+            note: string | null;
+            createdById: string;
+            reason: string;
         })[];
         expenses: ({
             requestedBy: {
@@ -51,18 +83,20 @@ export declare class ReportsService {
             id: string;
             createdAt: Date;
             updatedAt: Date;
-            amount: import("@prisma/client-runtime-utils").Decimal;
+            amount: Prisma.Decimal;
+            status: import("@prisma/client").$Enums.ExpenseStatus;
+            beneficiary: string | null;
             cashBoxId: string | null;
             description: string;
-            requestedById: string;
-            status: import("@prisma/client").$Enums.ExpenseStatus;
             expenseDate: Date;
-            beneficiary: string | null;
-            treasurerApprovedById: string | null;
+            note: string | null;
             treasurerApprovedAt: Date | null;
-            commissionerApprovedById: string | null;
             commissionerApprovedAt: Date | null;
             rejectReason: string | null;
+            categoryId: string | null;
+            requestedById: string;
+            treasurerApprovedById: string | null;
+            commissionerApprovedById: string | null;
         })[];
     }>;
     getAnnualReport(year: number): Promise<{
@@ -72,9 +106,17 @@ export declare class ReportsService {
             month: number;
             label: string;
             totalEntries: number;
+            advanceEntries: number;
             totalExits: number;
             solde: number;
         }[];
+        futureAllocations: {
+            label: string;
+            year: number;
+            month: number;
+            totalEntries: number;
+        }[];
+        allocatedEntries: number;
         totalEntries: number;
         totalExits: number;
         solde: number;
@@ -96,4 +138,5 @@ export declare class ReportsService {
         }[];
     }>;
     getTransactionsPdfBuffer(year?: number, month?: number): Promise<Buffer>;
+    getTransactionsExcelBuffer(year?: number, month?: number): Promise<Buffer>;
 }

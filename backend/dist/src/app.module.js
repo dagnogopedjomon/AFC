@@ -20,11 +20,18 @@ const contributions_module_1 = require("./contributions/contributions.module");
 const reports_module_1 = require("./reports/reports.module");
 const scheduler_module_1 = require("./scheduler/scheduler.module");
 const activities_module_1 = require("./activities/activities.module");
+const public_module_1 = require("./public/public.module");
+const articles_module_1 = require("./articles/articles.module");
+const documents_module_1 = require("./documents/documents.module");
+const site_rebuild_module_1 = require("./public/site-rebuild.module");
 const notifications_module_1 = require("./notifications/notifications.module");
 const health_module_1 = require("./health/health.module");
 const supabase_module_1 = require("./supabase/supabase.module");
+const webhooks_module_1 = require("./webhooks/webhooks.module");
+const regularizations_module_1 = require("./regularizations/regularizations.module");
 const jwt_auth_guard_1 = require("./auth/jwt-auth.guard");
 const http_exception_filter_1 = require("./common/filters/http-exception.filter");
+const administration_module_1 = require("./administration/administration.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -42,9 +49,16 @@ exports.AppModule = AppModule = __decorate([
             reports_module_1.ReportsModule,
             scheduler_module_1.SchedulerModule,
             activities_module_1.ActivitiesModule,
+            site_rebuild_module_1.SiteRebuildModule,
+            public_module_1.PublicModule,
+            articles_module_1.ArticlesModule,
+            documents_module_1.DocumentsModule,
             notifications_module_1.NotificationsModule,
             health_module_1.HealthModule,
             supabase_module_1.SupabaseModule,
+            webhooks_module_1.WebhooksModule,
+            regularizations_module_1.RegularizationsModule,
+            administration_module_1.AdministrationModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [

@@ -6,4 +6,5 @@ export declare class CreateActivityDto {
     date: string;
     endDate?: string;
     result?: string;
+    location?: string;
 }

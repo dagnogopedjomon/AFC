@@ -10,6 +10,7 @@ export declare class ReportsController {
             label: string;
         };
         totalEntries: number;
+        advanceEntries: number;
         totalExits: number;
         solde: number;
         payments: ({
@@ -25,11 +26,17 @@ export declare class ReportsController {
                 name: string;
                 type: import("@prisma/client").$Enums.ContributionType;
                 amount: import("@prisma/client-runtime-utils").Decimal | null;
+                isOpenAmount: boolean;
+                deadline: Date | null;
+                targetMemberIds: string | null;
+                beneficiaryMemberId: string | null;
+                status: import("@prisma/client").$Enums.ContributionStatus;
                 startDate: Date | null;
                 endDate: Date | null;
                 targetAmount: import("@prisma/client-runtime-utils").Decimal | null;
                 receivedAmount: import("@prisma/client-runtime-utils").Decimal | null;
                 frequency: import("@prisma/client").$Enums.PaymentFrequency | null;
+                allowPartialPayment: boolean;
             };
         } & {
             id: string;
@@ -42,6 +49,30 @@ export declare class ReportsController {
             periodYear: number | null;
             periodMonth: number | null;
             metadata: string | null;
+            cancelledAt: Date | null;
+            cancelledById: string | null;
+            cancellationReason: string | null;
+            regularizationAgreementId: string | null;
+        })[];
+        fines: ({
+            member: {
+                phone: string;
+                firstName: string;
+                lastName: string;
+            };
+        } & {
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            memberId: string;
+            amount: import("@prisma/client-runtime-utils").Decimal;
+            status: import("@prisma/client").$Enums.FineStatus;
+            paidAt: Date | null;
+            cashBoxId: string | null;
+            cancelledAt: Date | null;
+            note: string | null;
+            createdById: string;
+            reason: string;
         })[];
         expenses: ({
             requestedBy: {
@@ -53,17 +84,19 @@ export declare class ReportsController {
             createdAt: Date;
             updatedAt: Date;
             amount: import("@prisma/client-runtime-utils").Decimal;
+            status: import("@prisma/client").$Enums.ExpenseStatus;
+            beneficiary: string | null;
             cashBoxId: string | null;
             description: string;
-            requestedById: string;
-            status: import("@prisma/client").$Enums.ExpenseStatus;
             expenseDate: Date;
-            beneficiary: string | null;
-            treasurerApprovedById: string | null;
+            note: string | null;
             treasurerApprovedAt: Date | null;
-            commissionerApprovedById: string | null;
             commissionerApprovedAt: Date | null;
             rejectReason: string | null;
+            categoryId: string | null;
+            requestedById: string;
+            treasurerApprovedById: string | null;
+            commissionerApprovedById: string | null;
         })[];
     }>;
     getAnnualReport(year: string): Promise<{
@@ -73,9 +106,17 @@ export declare class ReportsController {
             month: number;
             label: string;
             totalEntries: number;
+            advanceEntries: number;
             totalExits: number;
             solde: number;
         }[];
+        futureAllocations: {
+            label: string;
+            year: number;
+            month: number;
+            totalEntries: number;
+        }[];
+        allocatedEntries: number;
         totalEntries: number;
         totalExits: number;
         solde: number;
@@ -98,4 +139,5 @@ export declare class ReportsController {
     }>;
     exportCsv(res: Response, year?: string, month?: string): Promise<void>;
     exportPdf(res: Response, year?: string, month?: string): Promise<void>;
+    exportExcel(res: Response, year?: string, month?: string): Promise<void>;
 }

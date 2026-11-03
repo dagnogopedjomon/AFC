@@ -10,8 +10,7 @@ exports.ContributionsModule = void 0;
 const common_1 = require("@nestjs/common");
 const contributions_service_1 = require("./contributions.service");
 const contributions_controller_1 = require("./contributions.controller");
-const cinetpay_service_1 = require("./cinetpay.service");
-const cinetpay_controller_1 = require("./cinetpay.controller");
+const jeko_service_1 = require("./jeko.service");
 const members_module_1 = require("../members/members.module");
 let ContributionsModule = class ContributionsModule {
 };
@@ -19,9 +18,9 @@ exports.ContributionsModule = ContributionsModule;
 exports.ContributionsModule = ContributionsModule = __decorate([
     (0, common_1.Module)({
         imports: [members_module_1.MembersModule],
-        controllers: [contributions_controller_1.ContributionsController, cinetpay_controller_1.CinetpayController],
-        providers: [contributions_service_1.ContributionsService, cinetpay_service_1.CinetpayService],
-        exports: [contributions_service_1.ContributionsService],
+        controllers: [contributions_controller_1.ContributionsController],
+        providers: [contributions_service_1.ContributionsService, jeko_service_1.JekoService],
+        exports: [contributions_service_1.ContributionsService, jeko_service_1.JekoService],
     })
 ], ContributionsModule);
 //# sourceMappingURL=contributions.module.js.map

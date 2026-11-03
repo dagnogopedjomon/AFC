@@ -16,10 +16,16 @@ class CreateContributionDto {
     name;
     type;
     amount;
+    isOpenAmount;
+    deadline;
+    targetMemberIds;
+    beneficiaryMemberId;
+    status;
     startDate;
     endDate;
     targetAmount;
     frequency;
+    allowPartialPayment;
 }
 exports.CreateContributionDto = CreateContributionDto;
 __decorate([
@@ -37,6 +43,32 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CreateContributionDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateContributionDto.prototype, "isOpenAmount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], CreateContributionDto.prototype, "deadline", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsString)({ each: true }),
+    __metadata("design:type", Array)
+], CreateContributionDto.prototype, "targetMemberIds", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateContributionDto.prototype, "beneficiaryMemberId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(client_1.ContributionStatus),
+    __metadata("design:type", String)
+], CreateContributionDto.prototype, "status", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsDateString)(),
@@ -58,4 +90,9 @@ __decorate([
     (0, class_validator_1.IsEnum)(client_1.PaymentFrequency),
     __metadata("design:type", String)
 ], CreateContributionDto.prototype, "frequency", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateContributionDto.prototype, "allowPartialPayment", void 0);
 //# sourceMappingURL=create-contribution.dto.js.map

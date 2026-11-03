@@ -50,7 +50,7 @@ const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
 const notifications_service_1 = require("../notifications/notifications.service");
 const SALT_ROUNDS = 10;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3001';
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3001').split(',')[0].trim().replace(/\/$/, '');
 let MembersService = class MembersService {
     prisma;
     notifications;
@@ -74,19 +74,26 @@ let MembersService = class MembersService {
                 firstName: 'Invité',
                 lastName: '—',
                 role: client_1.Role.PLAYER,
+                membershipStatus: client_1.MembershipStatus.PROSPECT,
                 profileCompleted: false,
             },
             select: this.selectPublic(),
         });
-        const activationToken = this.jwtService.sign({ sub: member.id, purpose: 'activation' }, { expiresIn: '24h' });
-        const activationLink = `${FRONTEND_URL}/activate?phone=${encodeURIComponent(member.phone)}&token=${encodeURIComponent(activationToken)}`;
+        const { randomBytes } = await import('crypto');
+        const code = randomBytes(3).toString('hex').toUpperCase();
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await this.prisma.member.update({
+            where: { id: member.id },
+            data: { otpCode: code, otpExpiresAt: expiresAt },
+        });
+        const activationLink = `${FRONTEND_URL}/activate?p=${encodeURIComponent(member.phone)}&c=${code}`;
         const inviteResult = await this.notifications.sendActivationInvite(member.id, member.phone, activationLink);
         await this.logAudit(member.id, 'INVITED', performedById, undefined);
         return {
             ...member,
             activationLink,
-            whatsappSent: inviteResult.whatsappSent,
-            whatsappError: inviteResult.whatsappError,
+            smsSent: inviteResult.smsSent,
+            smsError: inviteResult.smsError,
         };
     }
     async create(dto) {
@@ -97,30 +104,42 @@ let MembersService = class MembersService {
             throw new common_1.ConflictException('Ce numéro de téléphone est déjà utilisé');
         }
         const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-        const member = await this.prisma.member.create({
-            data: {
-                phone: dto.phone.trim(),
-                passwordHash,
-                firstName: dto.firstName.trim(),
-                lastName: dto.lastName.trim(),
-                role: dto.role,
-                profilePhotoUrl: dto.profilePhotoUrl ?? null,
-                email: dto.email?.trim() ?? null,
-                neighborhood: dto.neighborhood?.trim() ?? null,
-                secondaryContact: dto.secondaryContact?.trim() ?? null,
-                profileCompleted: false,
-            },
-            select: this.selectPublic(),
+        const member = await this.prisma.$transaction(async (tx) => {
+            if (dto.role === client_1.Role.ADMIN) {
+                await tx.member.updateMany({ where: { role: client_1.Role.ADMIN }, data: { role: client_1.Role.PLAYER } });
+            }
+            return tx.member.create({
+                data: {
+                    phone: dto.phone.trim(),
+                    passwordHash,
+                    firstName: dto.firstName.trim(),
+                    lastName: dto.lastName.trim(),
+                    role: dto.role,
+                    membershipStatus: client_1.MembershipStatus.PROSPECT,
+                    profilePhotoUrl: dto.profilePhotoUrl ?? null,
+                    email: dto.email?.trim() ?? null,
+                    neighborhood: dto.neighborhood?.trim() ?? null,
+                    secondaryContact: dto.secondaryContact?.trim() ?? null,
+                    profileCompleted: false,
+                },
+                select: this.selectPublic(),
+            });
         });
         return member;
     }
     async findAll() {
+        await this.promoteEligibleProspects();
         return this.prisma.member.findMany({
             orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
             select: this.selectPublic(),
         });
     }
+    async count() {
+        const count = await this.prisma.member.count();
+        return { count };
+    }
     async findOne(id) {
+        await this.promoteEligibleProspects();
         const member = await this.prisma.member.findUnique({
             where: { id },
             select: this.selectPublic(),
@@ -133,6 +152,7 @@ let MembersService = class MembersService {
         const existing = await this.findOne(id);
         const isSelf = id === currentUserId;
         const data = {};
+        let previousAdminIds = [];
         if (dto.password) {
             data.passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
         }
@@ -163,11 +183,29 @@ let MembersService = class MembersService {
         if (dto.role !== undefined && currentUserRole === client_1.Role.ADMIN && !isSelf) {
             data.role = dto.role;
         }
-        const updated = await this.prisma.member.update({
-            where: { id },
-            data,
-            select: this.selectPublic(),
+        if (dto.membershipStatus !== undefined && currentUserRole === client_1.Role.ADMIN && !isSelf) {
+            data.membershipStatus = dto.membershipStatus;
+            data.membershipStatusManual = true;
+        }
+        const updated = await this.prisma.$transaction(async (tx) => {
+            if (data.role === client_1.Role.ADMIN) {
+                const previousAdmins = await tx.member.findMany({ where: { role: client_1.Role.ADMIN, id: { not: id } }, select: { id: true } });
+                previousAdminIds = previousAdmins.map((member) => member.id);
+                await tx.member.updateMany({ where: { role: client_1.Role.ADMIN, id: { not: id } }, data: { role: client_1.Role.PLAYER } });
+            }
+            return tx.member.update({
+                where: { id },
+                data,
+                select: this.selectPublic(),
+            });
         });
+        if (data.role === client_1.Role.ADMIN && previousAdminIds.length > 0) {
+            const notifications = [
+                ...previousAdminIds.map((memberId) => this.notifications.createInApp(memberId, `Le rôle Administrateur a été transféré à ${updated.firstName} ${updated.lastName}. Votre compte conserve son accès membre.`, 'Transfert d’administration')),
+                this.notifications.createInApp(updated.id, 'Vous êtes désormais l’unique Administrateur de l’Amicale FC. Vous disposez maintenant des droits de gestion du club.', 'Vous êtes administrateur'),
+            ];
+            await Promise.allSettled(notifications);
+        }
         if (dto.isSuspended === false && existing.isSuspended) {
             await this.logAudit(id, 'REACTIVATED', currentUserId, undefined);
         }
@@ -210,8 +248,25 @@ let MembersService = class MembersService {
         });
     }
     async remove(id) {
-        await this.findOne(id);
-        await this.prisma.member.delete({ where: { id } });
+        const member = await this.findOne(id);
+        if (!member.profileCompleted) {
+            try {
+                await this.prisma.$transaction(async (tx) => {
+                    await tx.notificationLog.deleteMany({ where: { memberId: id } });
+                    await tx.member.delete({ where: { id } });
+                });
+            }
+            catch {
+                throw new common_1.ConflictException("Ce membre a des opérations enregistrées et ne peut pas être supprimé définitivement. Gelez ou suspendez plutôt son compte.");
+            }
+            return { success: true };
+        }
+        try {
+            await this.prisma.member.delete({ where: { id } });
+        }
+        catch {
+            throw new common_1.ConflictException("Ce membre a des opérations enregistrées (paiements, amendes, dépenses...) et ne peut pas être supprimé définitivement. Gelez ou suspendez plutôt son compte.");
+        }
         return { success: true };
     }
     selectPublic() {
@@ -221,6 +276,7 @@ let MembersService = class MembersService {
             firstName: true,
             lastName: true,
             role: true,
+            membershipStatus: true,
             profilePhotoUrl: true,
             email: true,
             neighborhood: true,
@@ -231,6 +287,18 @@ let MembersService = class MembersService {
             createdAt: true,
             updatedAt: true,
         };
+    }
+    async promoteEligibleProspects() {
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - 6);
+        await this.prisma.member.updateMany({
+            where: {
+                membershipStatus: client_1.MembershipStatus.PROSPECT,
+                membershipStatusManual: false,
+                createdAt: { lte: cutoff },
+            },
+            data: { membershipStatus: client_1.MembershipStatus.ACTIVE },
+        });
     }
 };
 exports.MembersService = MembersService;

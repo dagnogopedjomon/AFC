@@ -13,15 +13,16 @@ export declare class MembersService {
     constructor(prisma: PrismaService, notifications: NotificationsService, jwtService: JwtService);
     createInvite(dto: InviteMemberDto, performedById: string): Promise<{
         activationLink: string;
-        whatsappSent: boolean | undefined;
-        whatsappError: string | undefined;
+        smsSent: boolean;
+        smsError: string | undefined;
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -32,12 +33,13 @@ export declare class MembersService {
     }>;
     create(dto: CreateMemberDto): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -48,12 +50,13 @@ export declare class MembersService {
     }>;
     findAll(): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -62,14 +65,18 @@ export declare class MembersService {
         isSuspended: boolean;
         reactivatedAt: Date | null;
     }[]>;
+    count(): Promise<{
+        count: number;
+    }>;
     findOne(id: string): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -80,12 +87,13 @@ export declare class MembersService {
     }>;
     update(id: string, dto: UpdateMemberDto, currentUserId: string, currentUserRole: Role): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -96,12 +104,13 @@ export declare class MembersService {
     }>;
     completeProfile(userId: string, dto: CompleteProfileDto): Promise<{
         id: string;
+        phone: string;
         createdAt: Date;
         updatedAt: Date;
-        phone: string;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
+        membershipStatus: import("@prisma/client").$Enums.MembershipStatus;
         profilePhotoUrl: string | null;
         email: string | null;
         neighborhood: string | null;
@@ -129,4 +138,5 @@ export declare class MembersService {
         success: boolean;
     }>;
     private selectPublic;
+    promoteEligibleProspects(): Promise<void>;
 }

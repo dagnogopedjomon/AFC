@@ -41,6 +41,7 @@ var __importStar = (this && this.__importStar) || (function () {
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var AuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
@@ -48,53 +49,118 @@ const jwt_1 = require("@nestjs/jwt");
 const bcrypt = __importStar(require("bcrypt"));
 const prisma_service_1 = require("../prisma/prisma.service");
 const notifications_service_1 = require("../notifications/notifications.service");
-const client_1 = require("@prisma/client");
 const OTP_EXPIRY_MINUTES = 15;
 const SALT_ROUNDS = 10;
-let AuthService = class AuthService {
+function phoneLookupCandidates(input) {
+    const trimmed = input.trim();
+    const digits = trimmed.replace(/\D/g, '');
+    const candidates = new Set();
+    if (trimmed)
+        candidates.add(trimmed);
+    if (digits)
+        candidates.add(digits);
+    if (digits.length === 10) {
+        candidates.add('0' + digits.slice(-9));
+        candidates.add('+225' + digits);
+        candidates.add('225' + digits);
+    }
+    else if (digits.startsWith('225') && digits.length >= 11) {
+        const local = digits.slice(3);
+        candidates.add(local);
+        candidates.add('+' + digits);
+        candidates.add('+225' + local);
+        candidates.add('225' + local);
+    }
+    return [...candidates];
+}
+async function findMemberByPhone(prisma, phone) {
+    const phoneCandidates = phoneLookupCandidates(phone);
+    return prisma.member.findFirst({
+        where: { phone: { in: phoneCandidates } },
+    });
+}
+async function findMemberByIdentifier(prisma, identifier) {
+    const normalized = identifier.trim();
+    if (normalized.includes('@')) {
+        return prisma.member.findFirst({
+            where: { email: { equals: normalized, mode: 'insensitive' } },
+        });
+    }
+    return findMemberByPhone(prisma, normalized);
+}
+let AuthService = AuthService_1 = class AuthService {
     prisma;
     jwtService;
     notifications;
+    logger = new common_1.Logger(AuthService_1.name);
     constructor(prisma, jwtService, notifications) {
         this.prisma = prisma;
         this.jwtService = jwtService;
         this.notifications = notifications;
     }
-    async validateUser(phone, password) {
-        const member = await this.prisma.member.findUnique({
-            where: { phone: phone.trim() },
-        });
+    async validateUser(identifier, password) {
+        const member = await findMemberByIdentifier(this.prisma, identifier);
+        const candidates = identifier.includes('@') ? identifier.trim() : phoneLookupCandidates(identifier).join(',');
+        this.logger.log(`[Auth] login identifier=${identifier.trim()} candidates=[${candidates}] found=${!!member} hasPassword=${!!member?.passwordHash}`);
         if (!member || !member.passwordHash)
             return null;
-        const ok = await bcrypt.compare(password, member.passwordHash);
-        if (!ok)
+        try {
+            const ok = await bcrypt.compare(password, member.passwordHash);
+            if (!ok)
+                return null;
+        }
+        catch {
             return null;
+        }
         return member;
     }
-    async login(phone, password) {
-        const member = await this.validateUser(phone, password);
-        if (!member) {
-            throw new common_1.UnauthorizedException('Téléphone ou mot de passe incorrect');
+    async login(phone, password, deviceId) {
+        try {
+            const member = await this.validateUser(phone, password);
+            if (!member) {
+                throw new common_1.UnauthorizedException('Identifiant ou mot de passe incorrect');
+            }
+            await this.prisma.member.update({ where: { id: member.id }, data: { activeDeviceId: deviceId } });
+            const payload = { sub: member.id, phone: member.phone, role: member.role, deviceId };
+            const access_token = this.jwtService.sign(payload);
+            return {
+                access_token,
+                user: {
+                    id: member.id,
+                    phone: member.phone,
+                    firstName: member.firstName,
+                    lastName: member.lastName,
+                    role: member.role,
+                    profileCompleted: member.profileCompleted,
+                    profilePhotoUrl: member.profilePhotoUrl,
+                    email: member.email,
+                    isSuspended: member.isSuspended,
+                },
+            };
         }
-        if (member.isSuspended && member.role !== client_1.Role.ADMIN) {
-            throw new common_1.ForbiddenException("Compte suspendu pour non-paiement. Contactez l'administrateur.");
+        catch (error) {
+            if (error instanceof common_1.UnauthorizedException || error instanceof common_1.ForbiddenException) {
+                throw error;
+            }
+            this.logger.error(`[Auth] Login failed for phone=${phone.trim()}`, error instanceof Error ? error.stack : String(error));
+            const message = error instanceof Error ? error.message : 'Erreur inconnue';
+            throw new common_1.InternalServerErrorException(`Erreur lors de la connexion: ${message}`);
         }
-        const payload = { sub: member.id, phone: member.phone, role: member.role };
-        const access_token = this.jwtService.sign(payload);
-        return {
-            access_token,
-            user: {
-                id: member.id,
-                phone: member.phone,
-                firstName: member.firstName,
-                lastName: member.lastName,
-                role: member.role,
-                profileCompleted: member.profileCompleted,
-                profilePhotoUrl: member.profilePhotoUrl,
-                email: member.email,
-                isSuspended: member.isSuspended,
-            },
-        };
+    }
+    async logout(userId, deviceId) {
+        await this.prisma.member.updateMany({
+            where: { id: userId, ...(deviceId ? { activeDeviceId: deviceId } : {}) },
+            data: { activeDeviceId: null },
+        });
+        return { ok: true };
+    }
+    async assertDevice(userId, deviceId) {
+        const member = await this.prisma.member.findUnique({ where: { id: userId }, select: { activeDeviceId: true } });
+        if (!member)
+            throw new common_1.UnauthorizedException('Membre introuvable');
+        if (deviceId && member.activeDeviceId && member.activeDeviceId !== deviceId) {
+            throw new common_1.UnauthorizedException('Session ouverte sur un autre appareil');
+        }
     }
     async findById(id) {
         return this.prisma.member.findUnique({
@@ -116,9 +182,7 @@ let AuthService = class AuthService {
         });
     }
     async sendActivationOtp(phone) {
-        const member = await this.prisma.member.findUnique({
-            where: { phone: phone.trim() },
-        });
+        const member = await findMemberByPhone(this.prisma, phone);
         if (!member) {
             throw new common_1.BadRequestException('Ce numéro n’est pas enregistré. Demandez une invitation au club.');
         }
@@ -140,9 +204,7 @@ let AuthService = class AuthService {
         return { ok: true, message: 'Code envoyé (SMS ou WhatsApp).' };
     }
     async verifyActivationOtp(phone, code) {
-        const member = await this.prisma.member.findUnique({
-            where: { phone: phone.trim() },
-        });
+        const member = await findMemberByPhone(this.prisma, phone);
         if (!member || !member.otpCode || !member.otpExpiresAt) {
             throw new common_1.BadRequestException('Code invalide ou expiré.');
         }
@@ -203,9 +265,23 @@ let AuthService = class AuthService {
         });
         return { ok: true, message: 'Mot de passe créé. Vous pouvez vous connecter.' };
     }
+    async changePassword(memberId, currentPassword, newPassword) {
+        if (currentPassword === newPassword) {
+            throw new common_1.BadRequestException('Le nouveau mot de passe doit être différent.');
+        }
+        const member = await this.prisma.member.findUnique({ where: { id: memberId } });
+        if (!member?.passwordHash || !(await bcrypt.compare(currentPassword, member.passwordHash))) {
+            throw new common_1.UnauthorizedException('Le mot de passe actuel est incorrect.');
+        }
+        await this.prisma.member.update({
+            where: { id: memberId },
+            data: { passwordHash: await bcrypt.hash(newPassword, SALT_ROUNDS) },
+        });
+        return { ok: true, message: 'Mot de passe mis à jour.' };
+    }
 };
 exports.AuthService = AuthService;
-exports.AuthService = AuthService = __decorate([
+exports.AuthService = AuthService = AuthService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         jwt_1.JwtService,

@@ -3,6 +3,7 @@ import { LoginDto } from './dto/login.dto';
 import { SendActivationOtpDto } from './dto/send-activation-otp.dto';
 import { VerifyActivationOtpDto } from './dto/verify-activation-otp.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import type { RequestUser } from './jwt.strategy';
 export declare class AuthController {
     private readonly authService;
@@ -27,10 +28,13 @@ export declare class AuthController {
         ok: boolean;
         message: string;
     }>;
+    logout(user: RequestUser): Promise<{
+        ok: boolean;
+    }>;
     me(user: RequestUser): Promise<{
         id: string;
-        createdAt: Date;
         phone: string;
+        createdAt: Date;
         firstName: string;
         lastName: string;
         role: import("@prisma/client").$Enums.Role;
@@ -41,4 +45,8 @@ export declare class AuthController {
         profileCompleted: boolean;
         isSuspended: boolean;
     } | null>;
+    changePassword(user: RequestUser, dto: ChangePasswordDto): Promise<{
+        ok: boolean;
+        message: string;
+    }>;
 }

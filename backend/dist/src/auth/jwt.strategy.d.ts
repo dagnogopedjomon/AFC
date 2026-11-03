@@ -5,6 +5,7 @@ export type RequestUser = {
     id: string;
     phone: string;
     role: Role;
+    deviceId?: string;
 };
 declare const JwtStrategy_base: new (...args: [opt: import("passport-jwt").StrategyOptionsWithRequest] | [opt: import("passport-jwt").StrategyOptionsWithoutRequest]) => Strategy & {
     validate(...args: any[]): unknown;
